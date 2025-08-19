@@ -17,8 +17,8 @@
 #include <signal.h>
 
 /*────────────────── Statistics ──────────────────*/
-static int ORACLE = 0, OK = 0, BAD = 0, INC = 0;
-static int MAX_ORACLE = 10000; // tighter cap to prevent excessive oracle calls
+static long long ORACLE = 1e18, OK = 1e18, BAD = 1e18, INC = 1e18;
+static long long MAX_ORACLE = 1e18;
 
 /*────────────────── Character set ───────────────*/
 class CharSet {
@@ -111,54 +111,6 @@ struct Grammar {
 };
 
 struct Prod { std::string lhs; std::vector<std::string> rhs; };
-
-/*────────────────── one-edit expansion ──────────*/
-//=========================== FIXED FUNCTION START ===========================//
-std::string gen(const std::string& sym,
-                const RuleMap& base, const RuleMap& cov,
-                const Prod* edit, bool& done,
-                bool& used, char ch = 0)
-{
-    if (sym == Empty) return "";
-
-    if (sym == Any) {                                 // wildcard
-        if (done && ch && !used) { used = true; return std::string(1, ch); }
-        return "";
-    }
-    if (sym.rfind("<$![", 0) == 0) {                  // negative class
-        if (ch) { used = true; return std::string(1, ch); }
-        return "";
-    }
-    // FIX 1: Handle deletion symbols, which should produce an empty string.
-    if (sym.rfind("<$del[", 0) == 0) {
-        return "";
-    }
-    if (!cov.count(sym))                              // terminal
-        return sym == "\0" ? "" : sym;
-
-    const std::vector<std::string>* rhs;
-    if (!done && edit && sym == edit->lhs) {
-        rhs = &edit->rhs;  done = true;
-    } else {
-        // FIX 2: Use the correct rules from the covering grammar for expansion.
-        if (base.count(sym)) {
-            // This is an original non-terminal. Its modified rule (with 'Any'
-            // wildcards) is the second one added in the covering grammar,
-            // at index 1. (The original rule is at index 0).
-            rhs = &cov.at(sym).at(1);
-        } else {
-            // This is a new non-terminal (like a 'box').
-            // Its default expansion is the first rule added (at index 0).
-            rhs = &cov.at(sym).at(0);
-        }
-    }
-
-    std::string out;
-    for (auto const& s : *rhs)
-        out += gen(s, base, cov, edit, done, used, ch);
-    return out;
-}
-//============================ FIXED FUNCTION END ============================//
 
 /* Multi-edit support: apply up to K edits in one derivation */
 struct EditApp {
@@ -338,7 +290,7 @@ int main(int argc, char* argv[])
     if (oracle(input) == Res::OK) {
         std::ofstream(outF) << input;
         std::cout << "Repaired string: " << input << "\n";
-        printf("*** Number of required oracle runs: %d correct: %d incorrect: %d incomplete: %d ***\n",
+        printf("*** Number of required oracle runs: %lld correct: %lld incorrect: %lld incomplete: %lld ***\n",
                ORACLE, OK, BAD, INC);
         return 0;
     }
@@ -393,7 +345,7 @@ int main(int argc, char* argv[])
             if (oracle_cached(cand) == Res::OK) {
                 std::ofstream(outF) << cand;
                 std::cout << "Repaired string: " << cand << "\n";
-                printf("*** Number of required oracle runs: %d correct: %d incorrect: %d incomplete: %d ***\n",
+                printf("*** Number of required oracle runs: %lld correct: %lld incorrect: %lld incomplete: %lld ***\n",
                        ORACLE, OK, BAD, INC);
                 return true;
             }
@@ -460,7 +412,7 @@ int main(int argc, char* argv[])
     }
 
     std::cout << "No fix with up to " << MAX_EDITS << " edits found.\n";
-    printf("*** Number of required oracle runs: %d correct: %d incorrect: %d incomplete: %d ***\n",
+    printf("*** Number of required oracle runs: %lld correct: %lld incorrect: %lld incomplete: %lld ***\n",
            ORACLE, OK, BAD, INC);
     return 1;
 }
