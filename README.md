@@ -136,7 +136,3 @@ The engine now performs a single deletion of the trailing `1` (position-unique b
   - Reduce `MAX_EDITS` or `MAX_ORACLE`
   - Keep JSON insertion charset restricted
   - Improve oracle performance or reduce timeout if it is too high
-
-## License
-
-No explicit license provided. Treat as internal code unless you add a license file.
