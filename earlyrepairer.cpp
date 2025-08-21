@@ -30,10 +30,6 @@ public:
         for (int c = 33; c <= 126; ++c) s_.insert(char(c));
         s_.insert('\n'); s_.insert('\t');
     }
-    void restrict_to(const std::string& allowed) {
-        s_.clear();
-        for (char c : allowed) s_.insert(c);
-    }
     auto begin() const { return s_.begin(); }
     auto end()   const { return s_.end();   }
 };
@@ -306,10 +302,7 @@ int main(int argc, char* argv[])
         }
 
     CharSet cs;
-    // Heuristic: if the oracle path suggests JSON, restrict insertion charset to JSON-ish tokens
-    if (exe.find("json") != std::string::npos) {
-        cs.restrict_to(" \t\n{}[],:\\\"-0123456789.eEtruefalsenull");
-    }
+
 
     // Cached oracle to avoid duplicate work
     std::unordered_set<std::string> seen;
