@@ -17,8 +17,8 @@
 #include <signal.h>
 
 /*────────────────── Statistics ──────────────────*/
-static long long ORACLE = 1e18, OK = 1e18, BAD = 1e18, INC = 1e18;
-static long long MAX_ORACLE = 1e18;
+static long long ORACLE = 0, OK = 0, BAD = 0, INC = 0;
+static long long MAX_ORACLE = (long long)1e18;
 
 /*────────────────── Character set ───────────────*/
 class CharSet {
@@ -68,7 +68,7 @@ struct Grammar {
                         std::string neg = "<$![" + tag + "]>";
                         g.add(box, {sym});              // match
                         g.add(box, {del});              // delete
-                        // g.add(box, {Any, sym});      // insert (optional)
+                        g.add(box, {Any, sym});      // insert 
                         // g.add(box, {neg});           // substitute (neg-class)
                         g.add(neg, {});                 // any≠sym
 
@@ -184,7 +184,7 @@ std::function<Res(const std::string&)> oracleWrap(const std::string& exe)
         }
         std::string f = tmpFile(); { std::ofstream(f) << in; }
         ++ORACLE;
-
+        std::cout << "Oracle call " << ORACLE << ": " << in << "\n";
         pid_t pid = fork();
         if (pid == -1) {
             std::remove(f.c_str());
