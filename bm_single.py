@@ -6,6 +6,7 @@ import re
 import time
 import random
 import concurrent.futures
+import argparse
 
 # ------------------------------------------------------------------------------
 # Configuration
@@ -241,7 +242,7 @@ def repair_and_update_entry(cursor, conn, row):
         if not oracle_executable:
             print(f"[ERROR] No oracle executable for format {base_format}")
             return
-        cmd = ["./earlyrepairer", oracle_executable, input_file, output_file]
+        cmd = ["./earleyrepairer", oracle_executable, input_file, output_file]
     else:
         # Example usage of your erepair.jar approach
         cmd = [
@@ -303,7 +304,7 @@ def repair_and_update_entry(cursor, conn, row):
     conn.commit()
 
 
-def rerun_repairs_for_selected_formats(db_path: str, selected_formats=None):
+def rerun_repairs_for_selected_formats(db_path: str, selected_formats=None, max_workers=None):
     """
     Re-run (or run for the first time) repairs for the specified formats.
     If selected_formats is None, it will use all in VALID_FORMATS.
@@ -340,7 +341,10 @@ def rerun_repairs_for_selected_formats(db_path: str, selected_formats=None):
         finally:
             thread_conn.close()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as executor:
+    if not max_workers:
+        max_workers = os.cpu_count() or 4
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         executor.map(_worker, filtered_entries)
 
     conn.close()
@@ -351,34 +355,49 @@ def rerun_repairs_for_selected_formats(db_path: str, selected_formats=None):
 # Main script flow
 # ------------------------------------------------------------------------------
 def main():
+    parser = argparse.ArgumentParser(description="Benchmark runner with resume support")
+    parser.add_argument("--db", default=DATABASE_PATH, help="Path to results SQLite DB")
+    parser.add_argument("--formats", nargs="+", choices=VALID_FORMATS, help="Formats to include (default: all)")
+    parser.add_argument("--mutations", nargs="+", default=MUTATION_TYPES, help="Mutation types to include")
+    parser.add_argument("--algorithms", nargs="+", choices=REPAIR_ALGORITHMS, help="Override algorithms to run")
+    parser.add_argument("--resume-only", action="store_true", help="Skip sample insertion, only resume unfinished repairs")
+    parser.add_argument("--max-workers", type=int, help="Max parallel workers (default: cpu count)")
+    args = parser.parse_args()
+
+    db_path = args.db
+
+    if args.algorithms:
+        # override algorithms in-place
+        REPAIR_ALGORITHMS[:] = args.algorithms
+
     # 1) Create or reuse the database
-    create_database(DATABASE_PATH)
+    create_database(db_path)
 
-    # 2) For each format and mutation type, load test samples from the corresponding DB
-    for mutation_type in MUTATION_TYPES:
-        for fmt in VALID_FORMATS:
-            # Construct DB path, e.g., mutated_files/single_dot.db
-            db_name = f"{mutation_type}_{fmt}.db"
-            mutation_db_path = os.path.join("mutated_files", db_name)
+    # 2) Optionally insert tasks (idempotent)
+    if not args.resume_only:
+        for mutation_type in args.mutations:
+            for fmt in (args.formats if args.formats else VALID_FORMATS):
+                # Construct DB path, e.g., mutated_files/single_dot.db
+                db_name = f"{mutation_type}_{fmt}.db"
+                mutation_db_path = os.path.join("mutated_files", db_name)
 
-            if not os.path.exists(mutation_db_path):
-                print(f"[INFO] Skipping, not found: {mutation_db_path}")
-                continue
+                if not os.path.exists(mutation_db_path):
+                    print(f"[INFO] Skipping, not found: {mutation_db_path}")
+                    continue
 
-            print(f"[INFO] Loading samples from {mutation_db_path}")
-            samples = load_test_samples_from_db(mutation_db_path)
-            
-            if samples:
-                # 3) Insert each sample into the 'results' table for *each* algorithm
-                # We use a combined format key like "single_dot"
-                format_key = f"{mutation_type}_{fmt}"
-                insert_test_samples_to_db(DATABASE_PATH, format_key, samples)
-            else:
-                print(f"[INFO] No samples found in '{mutation_db_path}'")
+                print(f"[INFO] Loading samples from {mutation_db_path}")
+                samples = load_test_samples_from_db(mutation_db_path)
+                
+                if samples:
+                    # Insert each sample into the 'results' table for *each* algorithm
+                    format_key = f"{mutation_type}_{fmt}"
+                    insert_test_samples_to_db(db_path, format_key, samples)
+                else:
+                    print(f"[INFO] No samples found in '{mutation_db_path}'")
 
-    # 4) Now run or re-run the repairs for all newly inserted entries
-    all_formats = [f"{mtype}_{fmt}" for mtype in MUTATION_TYPES for fmt in VALID_FORMATS]
-    rerun_repairs_for_selected_formats(DATABASE_PATH, selected_formats=all_formats)
+    # 3) Resume/Run unfinished repairs
+    formats_for_rerun = [f"{m}_{f}" for m in args.mutations for f in (args.formats if args.formats else VALID_FORMATS)]
+    rerun_repairs_for_selected_formats(db_path, selected_formats=formats_for_rerun, max_workers=args.max_workers)
 
 
 if __name__ == "__main__":

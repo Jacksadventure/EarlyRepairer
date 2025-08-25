@@ -2,5 +2,6 @@
     "files.associations": {
         "*.ejs": "html",
         "stdexcept": "cpp"
-    }
+    },
+    "cmake.sourceDirectory": "/Users/jack/EarlyRepairer/project/erepair-subjects/dot"
 }
