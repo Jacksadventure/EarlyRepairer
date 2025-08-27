@@ -37,7 +37,7 @@ MUTATION_TYPES = ["single"]
 VALIDATION_TIMEOUT = 30
 
 # Repair timeout (in seconds)
-REPAIR_TIMEOUT = 240
+REPAIR_TIMEOUT = 2400
 
 # ------------------------------------------------------------------------------
 # Helper functions

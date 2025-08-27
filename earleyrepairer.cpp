@@ -34,9 +34,9 @@ public:
     auto end()   const { return s_.end();   }
 };
 
-/*────────────────── Grammar basics ──────────────*/
-const std::string Any   = "$.";        // wildcard
-const std::string Empty = "<$>";       // global ε ─ still used internally
+/*────────────────── Grammar basics ───────────────*/
+const std::string Any   = "$.";        // wildcard terminal for insert-before
+const std::string Empty = "<$>";       // global ε (not used as a rule key here)
 
 using RuleMap = std::map<std::string,
                          std::vector<std::vector<std::string>>>;
@@ -44,46 +44,47 @@ using RuleMap = std::map<std::string,
 struct Grammar {
     RuleMap R;
 
-    void add(const std::string& lhs,
-             std::vector<std::string> rhs)
-    { R[lhs].push_back(std::move(rhs)); }
-
-    /*—— covering grammar (Aho et al.) with per-terminal delete NTs ——*/
-    Grammar covering() const {
-        Grammar g = *this;
-        g.add(Empty, {});                               // global ε
-
-        for (auto const& [lhs, rhss] : R)
-            for (auto const& rhs : rhss) {
-                std::vector<std::string> nr;
-                for (size_t pos = 0; pos < rhs.size(); ++pos) {
-                    const std::string& sym = rhs[pos];
-                    nr.push_back(Any);                  // insertion before sym
-
-                    if (!R.count(sym)) {                // terminal
-                        // Position-unique boxes so each character can be edited independently
-                        std::string tag = lhs + ":" + std::to_string(pos);
-                        std::string box = "<$[" + tag + "]>";
-                        std::string del = "<$del[" + tag + "]>";
-                        std::string neg = "<$![" + tag + "]>";
-                        g.add(box, {sym});              // match
-                        g.add(box, {del});              // delete
-                        g.add(box, {Any, sym});      // insert 
-                        // g.add(box, {neg});           // substitute (neg-class)
-                        g.add(neg, {});                 // any≠sym
-
-                        nr.push_back(std::move(box));
-                    } else {                            // non-terminal
-                        nr.push_back(sym);
-                    }
-                }
-                nr.push_back(Any);                      // insertion after sym
-                g.add(lhs, std::move(nr));
-            }
-        return g;
+    void add(const std::string& lhs, std::vector<std::string> rhs) {
+        R[lhs].push_back(std::move(rhs));
     }
 
-    /*—— build grammar from raw string — each char gets its own NT ——*/
+    // Covering grammar:
+    // For rules of the form <cK> → t (t is a single terminal), produce:
+    //   <cK> → t | <$del[t]> | $. t | <$![t]>
+    // For other rules (e.g., <start> → <c0> <c1> … <cN>), copy as-is.
+    // The sentinel production t == "\0" becomes ε (only).
+    Grammar covering() const {
+        Grammar cg;
+
+        for (const auto& [lhs, rhss] : R) {
+            for (const auto& rhs : rhss) {
+                // Single-terminal rule: expand to 4-alternative cover
+                if (rhs.size() == 1 && !R.count(rhs[0])) {
+                    const std::string& t = rhs[0];
+                    if (t == "\0") {
+                        // Sentinel → ε
+                        cg.add(lhs, {}); // <cN> → ε
+                    } else {
+                        const std::string delTok = "<$del[" + t + "]>";
+                        const std::string negTok = "<$!["  + t + "]>";
+                        // Order: match | delete | insert-before | substitute
+                        cg.add(lhs, {t});
+                        cg.add(lhs, {delTok});
+                        cg.add(lhs, {Any, t});
+                        cg.add(lhs, {negTok});
+                    }
+                } else {
+                    // Structural rule: keep as-is (e.g., <start> sequence)
+                    cg.add(lhs, rhs);
+                }
+            }
+        }
+        return cg;
+    }
+
+    // Build base grammar from a raw string:
+    // <start> → <c0> <c1> ... <cN>   and
+    // <cK> → 'char', plus a sentinel <cN> → "\0"
     static Grammar fromString(const std::string& str,
                               const std::string& start = "<start>")
     {
@@ -94,7 +95,7 @@ struct Grammar {
         for (char c : str) {
             std::string nt = "<c" + std::to_string(idx++) + ">";
             start_rhs.push_back(nt);
-            g.add(nt, {std::string(1, c)});            // nt → 'c'
+            g.add(nt, {std::string(1, c)});  // <cK> → 'c'
         }
         // sentinel \0
         std::string nt_end = "<c" + std::to_string(idx) + ">";
@@ -108,18 +109,27 @@ struct Grammar {
 
 struct Prod { std::string lhs; std::vector<std::string> rhs; };
 
-/* Multi-edit support: apply up to K edits in one derivation */
+/* One selected edit application */
 struct EditApp {
     const Prod* p = nullptr;
     bool applied = false;
     bool char_used = false;
-    char ch = 0;
+    char ch = 0;          // candidate character (for $. or <$![...]>)
     bool needChar = false;
 };
 
-std::string gen_multi(const std::string& sym,
-                      const RuleMap& base, const RuleMap& cov,
-                      std::vector<EditApp>& apps, int active)
+/*──────── String generation for covering grammar ────────
+   - "$."           : outputs one char only if inside an active edit; otherwise "".
+   - "<$![...]> "   : terminal; consumes one char only in active edit; otherwise "".
+   - "<$del[...]> " : delete token → "".
+   - "\0"           : suppressed (ε) when seen as terminal.
+   - Nonterminals   : if there is an unapplied edit with LHS==sym, expand that RHS under that edit;
+                      otherwise use FIRST production (assumed "match" branch).
+*/
+static std::string gen_multi(const std::string& sym,
+                             const RuleMap& cov,
+                             std::vector<EditApp>& apps,
+                             int active)
 {
     if (sym == Empty) return "";
 
@@ -130,18 +140,24 @@ std::string gen_multi(const std::string& sym,
         }
         return "";
     }
+
     if (sym.rfind("<$![", 0) == 0) {
         if (active >= 0) {
             auto& a = apps[active];
-            if (a.ch) { a.char_used = true; return std::string(1, a.ch); }
+            if (a.ch && !a.char_used) { a.char_used = true; return std::string(1, a.ch); }
         }
         return "";
     }
+
     if (sym.rfind("<$del[", 0) == 0) {
         return "";
     }
-    if (!cov.count(sym))
+
+    // Terminal? (no production in covering grammar)
+    auto it = cov.find(sym);
+    if (it == cov.end()) {
         return sym == "\0" ? "" : sym;
+    }
 
     // If not inside an active edit subtree, see if an unapplied edit targets this symbol
     if (active == -1) {
@@ -150,50 +166,57 @@ std::string gen_multi(const std::string& sym,
             if (!a.applied && sym == a.p->lhs) {
                 a.applied = true;
                 std::string out;
-                for (auto const& s : a.p->rhs)
-                    out += gen_multi(s, base, cov, apps, int(i));
+                for (const auto& s : a.p->rhs)
+                    out += gen_multi(s, cov, apps, int(i));
                 return out;
             }
         }
     }
 
-    // Default expansion
-    const std::vector<std::string>* rhs;
-    if (base.count(sym)) rhs = &cov.at(sym).at(1);
-    else                 rhs = &cov.at(sym).at(0);
-
+    // Default expansion: FIRST production = "match" branch
+    const auto& first_rhs = it->second.front();
     std::string out;
-    for (auto const& s : *rhs)
-        out += gen_multi(s, base, cov, apps, active);
+    for (const auto& s : first_rhs)
+        out += gen_multi(s, cov, apps, active);
     return out;
 }
 
 /*────────────────── oracle wrapper ───────────────*/
 enum class Res { OK, ERR, INC };
 
-std::string tmpFile() {
+static std::string tmpFile() {
     char p[] = "/tmp/repairXXXXXX";
     int fd = mkstemp(p); if (fd == -1) throw std::runtime_error("tmp");
     close(fd); return p;
 }
-std::function<Res(const std::string&)> oracleWrap(const std::string& exe)
+static std::function<Res(const std::string&)> oracleWrap(const std::string& exe)
 {
     return [exe](const std::string& in) -> Res {
-        if (ORACLE >= MAX_ORACLE) {
-            return Res::ERR;
-        }
+        if (ORACLE >= MAX_ORACLE) return Res::ERR;
+
         std::string f = tmpFile(); { std::ofstream(f) << in; }
         ++ORACLE;
-        std::cout << "Oracle call " << ORACLE << ": " << in << "\n";
+
+        // readable logging
+        auto show = [&](const std::string& s) {
+            std::string out; out.reserve(std::min<size_t>(s.size(), 120));
+            for (unsigned char ch : s) {
+                if (ch == '\n') out += "\\n";
+                else if (ch == '\t') out += "\\t";
+                else if (ch < 32 || ch == 127) {
+                    char buf[6]; snprintf(buf, sizeof(buf), "\\x%02X", ch);
+                    out += buf;
+                } else out.push_back(ch);
+            }
+            if (s.size() > 120) out += "…";
+            return out.empty() ? std::string("<EMPTY>") : out;
+        };
+        std::cout << "Oracle call " << ORACLE << ": " << show(in) << "\n";
+
         pid_t pid = fork();
-        if (pid == -1) {
-            std::remove(f.c_str());
-            ++BAD;
-            return Res::ERR;
-        }
+        if (pid == -1) { std::remove(f.c_str()); ++BAD; return Res::ERR; }
 
         if (pid == 0) {
-            // Child: redirect stdout/stderr to /dev/null and exec the oracle directly (no shell).
             int devnull = open("/dev/null", O_WRONLY);
             if (devnull >= 0) {
                 dup2(devnull, STDOUT_FILENO);
@@ -201,7 +224,7 @@ std::function<Res(const std::string&)> oracleWrap(const std::string& exe)
                 close(devnull);
             }
             execl(exe.c_str(), exe.c_str(), f.c_str(), (char*)nullptr);
-            _exit(127); // exec failed
+            _exit(127);
         }
 
         int st = 0;
@@ -209,11 +232,7 @@ std::function<Res(const std::string&)> oracleWrap(const std::string& exe)
         const int timeout_ms = 1000;
         while (true) {
             pid_t res = waitpid(pid, &st, WNOHANG);
-            if (res == -1) {
-                std::remove(f.c_str());
-                ++BAD;
-                return Res::ERR;
-            }
+            if (res == -1) { std::remove(f.c_str()); ++BAD; return Res::ERR; }
             if (res > 0) break;
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                                std::chrono::steady_clock::now() - start).count();
@@ -221,8 +240,7 @@ std::function<Res(const std::string&)> oracleWrap(const std::string& exe)
                 kill(pid, SIGKILL);
                 waitpid(pid, &st, 0);
                 std::remove(f.c_str());
-                ++BAD;
-                return Res::ERR;
+                ++BAD; return Res::ERR;
             }
             usleep(5000);
         }
@@ -236,11 +254,9 @@ std::function<Res(const std::string&)> oracleWrap(const std::string& exe)
                 default:  ++BAD; return Res::ERR;
             }
         } else if (WIFSIGNALED(st)) {
-            ++BAD;
-            return Res::ERR;
+            ++BAD; return Res::ERR;
         } else {
-            ++BAD;
-            return Res::ERR;
+            ++BAD; return Res::ERR;
         }
     };
 }
@@ -248,78 +264,74 @@ std::function<Res(const std::string&)> oracleWrap(const std::string& exe)
 /*────────────────── main ─────────────────────────*/
 int main(int argc, char* argv[])
 {
-    const int MAX_EDITS = 5; // Increased edit limit from 3 to 5
+    const int MAX_EDITS = 5;
 
-    if (argc < 4) {
-        std::cerr << "Usage: " << argv[0]
-                  << " <parser_path> <input_string> <output_file>\n";
-        return 1;
-    }
-    const std::string exe   = argv[1];
-    const std::string inputArg = argv[2];
-    const std::string outF  = argv[3];
-
-    if (access(exe.c_str(), X_OK) != 0) {
-        std::cerr << "Parser executable not found or not executable: " << exe << "\n";
-        return 1;
-    }
-
-    // Allow argv[2] to be either a literal string or a path to a file.
-    // If it looks like a readable file, load its contents; otherwise, treat it as the input string.
-    std::string input;
-    {
-        std::ifstream fin(inputArg);
-        if (fin.good()) {
-            input.assign((std::istreambuf_iterator<char>(fin)), std::istreambuf_iterator<char>());
-        } else {
-            input = inputArg;
+    try {
+        if (argc < 4) {
+            std::cerr << "Usage: " << argv[0]
+                      << " <parser_path> <input_string_or_file> <output_file>\n";
+            return 1;
         }
-    }
+        const std::string exe      = argv[1];
+        const std::string inputArg = argv[2];
+        const std::string outF     = argv[3];
 
-    auto oracle  = oracleWrap(exe);
-
-
-    Grammar base = Grammar::fromString(input);
-    Grammar cov  = base.covering();
-
-    /* 0-edit quick check */
-    if (oracle(input) == Res::OK) {
-        std::ofstream(outF) << input;
-        std::cout << "Repaired string: " << input << "\n";
-        printf("*** Number of required oracle runs: %lld correct: %lld incorrect: %lld incomplete: %lld ***\n",
-               ORACLE, OK, BAD, INC);
-        return 0;
-    }
-
-    /* collect all single-edit productions */
-    std::vector<Prod> edits;                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          
-    for (auto const& [lhs, rhss] : cov.R)
-        for (auto const& rhs : rhss) {
-            bool ins = !rhs.empty() && rhs[0] == Any;
-            bool del = rhs.size()==1 && rhs[0].rfind("<$del[",0)==0;
-            bool sub = rhs.size()==1 && rhs[0].rfind("<$![",0)==0;
-            if (ins || del || sub) edits.push_back({lhs, rhs});
+        if (access(exe.c_str(), X_OK) != 0) {
+            std::cerr << "Parser executable not found or not executable: " << exe << "\n";
+            return 1;
         }
 
-    CharSet cs;
+        // argv[2] can be literal or a path to a file.
+        std::string input;
+        {
+            std::ifstream fin(inputArg);
+            if (fin.good()) {
+                input.assign((std::istreambuf_iterator<char>(fin)), std::istreambuf_iterator<char>());
+            } else {
+                input = inputArg;
+            }
+        }
 
+        auto oracle  = oracleWrap(exe);
 
-    // Cached oracle to avoid duplicate work
-    std::unordered_set<std::string> seen;
-    auto oracle_cached = [&](const std::string& s) -> Res {
-        if (seen.insert(s).second) return oracle(s);
-        return Res::ERR;
-    };
+        Grammar base = Grammar::fromString(input);
+        Grammar cov  = base.covering();
 
-    // Multi-edit search with pruning and budgets
-    {
+        /* 0-edit quick check */
+        if (oracle(input) == Res::OK) {
+            std::ofstream(outF) << input;
+            std::cout << "Repaired string: " << input << "\n";
+            printf("*** Number of required oracle runs: %lld correct: %lld incorrect: %lld incomplete: %lld ***\n",
+                   ORACLE, OK, BAD, INC);
+            return 0;
+        }
 
-        auto needsChar = [&](const Prod& p) -> bool {
-            return (!p.rhs.empty() && p.rhs[0] == Any) ||
-                   (p.rhs.size() == 1 && p.rhs[0].rfind("<$![", 0) == 0);
+        /* collect all single-edit productions (insert/delete/substitute) */
+        std::vector<Prod> edits;
+        for (const auto& [lhs, rhss] : cov.R) {
+            for (const auto& rhs : rhss) {
+                bool is_insert = (!rhs.empty() && rhs[0] == Any);                   // $. t
+                bool is_delete = (rhs.size()==1 && rhs[0].rfind("<$del[", 0) == 0); // <$del[t]>
+                bool is_subst  = (rhs.size()==1 && rhs[0].rfind("<$![",  0) == 0);  // <$![t]>
+                if (is_insert || is_delete || is_subst) edits.push_back({lhs, rhs});
+            }
+        }
+
+        CharSet cs;
+
+        // Cached oracle to avoid duplicate work
+        std::unordered_set<std::string> seen;
+        auto oracle_cached = [&](const std::string& s) -> Res {
+            if (seen.insert(s).second) return oracle(s);
+            return Res::ERR;
         };
 
-        // Build and test a candidate given a selection of edit indices and chars
+        auto needsChar = [&](const Prod& p) -> bool {
+            return (!p.rhs.empty() && p.rhs[0] == Any) ||                            // insert
+                   (p.rhs.size()==1 && p.rhs[0].rfind("<$![", 0) == 0);              // substitute
+        };
+
+        // Build and test a candidate given selected edits + chars
         std::function<bool(const std::vector<int>&, const std::vector<char>&)> build_and_test =
         [&](const std::vector<int>& sel, const std::vector<char>& chars) -> bool
         {
@@ -332,9 +344,8 @@ int main(int argc, char* argv[])
                 if (a.needChar) a.ch = chars[ci++];
                 apps.push_back(a);
             }
-            std::string cand = gen_multi("<start>", base.R, cov.R, apps, -1);
-            // ensure all selected edits actually applied
-            for (auto const& a : apps) if (!a.applied) return false;
+            std::string cand = gen_multi("<start>", cov.R, apps, -1);
+            for (const auto& a : apps) if (!a.applied) return false; // must be used
             if (oracle_cached(cand) == Res::OK) {
                 std::ofstream(outF) << cand;
                 std::cout << "Repaired string: " << cand << "\n";
@@ -345,13 +356,11 @@ int main(int argc, char* argv[])
             return false;
         };
 
-        // Assign exactly 'need' chars (we will only ever request <= 1 to prevent explosion)
+        // Assign characters for edits that need one (bounded)
         std::function<bool(const std::vector<int>&, size_t, std::vector<char>&)> assign_chars =
         [&](const std::vector<int>& sel, size_t need, std::vector<char>& buf) -> bool
         {
-            if (buf.size() == need) {
-                return build_and_test(sel, buf);
-            }
+            if (buf.size() == need) return build_and_test(sel, buf);
             for (char c : cs) {
                 buf.push_back(c);
                 if (assign_chars(sel, need, buf)) return true;
@@ -360,52 +369,37 @@ int main(int argc, char* argv[])
             return false;
         };
 
-        // Partition edits into deletions and insertions
-        std::vector<int> del_idx, ins_idx, other_idx;
-        for (int i = 0; i < (int)edits.size(); ++i) {
-            const auto& rhs = edits[i].rhs;
-            bool ins = !rhs.empty() && rhs[0] == Any;
-            bool del = rhs.size()==1 && rhs[0].rfind("<$del[",0)==0;
-            bool sub = rhs.size()==1 && rhs[0].rfind("<$![",0)==0;
-            if (del) del_idx.push_back(i);
-            else if (ins) ins_idx.push_back(i);
-            else if (sub) other_idx.push_back(i);
-        }
-
-        // Try all edit combinations up to MAX_EDITS
+        // Try all edit combinations up to MAX_EDITS (with pruning: ≤1 char-needing edit per combo)
         int n = (int)edits.size();
         for (int k = 1; k <= MAX_EDITS; ++k) {
-            // Use std::vector<int> to hold indices of selected edits
             std::vector<int> sel(k);
-            std::function<bool(int, int)> search;
-            search = [&](int idx, int start) -> bool {
+            std::function<bool(int)> search = [&](int idx) -> bool {
                 if (idx == k) {
-                    // Prune: allow at most one char insertion/substitution per combination
                     size_t need = 0;
-                    for (int i = 0; i < k; ++i) {
-                        if (needsChar(edits[sel[i]])) ++need;
-                    }
+                    for (int i = 0; i < k; ++i) if (needsChar(edits[sel[i]])) ++need;
                     if (need > 1) return false;
-                    if (need == 0) {
-                        if (build_and_test(sel, {})) return true;
-                    } else {
-                        std::vector<char> buf;
-                        if (assign_chars(sel, need, buf)) return true;
-                    }
-                    return false;
+                    if (need == 0) return build_and_test(sel, {});
+                    std::vector<char> buf;
+                    return assign_chars(sel, need, buf);
                 }
-                for (int i = (idx == 0 ? 0 : sel[idx - 1] + 1); i < n; ++i) {
+                for (int i = (idx ? sel[idx-1]+1 : 0); i < n; ++i) {
                     sel[idx] = i;
-                    if (search(idx + 1, i + 1)) return true;
+                    if (search(idx + 1)) return true;
                 }
                 return false;
             };
-            if (search(0, 0)) return 0;
+            if (search(0)) return 0;
         }
-    }
 
-    std::cout << "No fix with up to " << MAX_EDITS << " edits found.\n";
-    printf("*** Number of required oracle runs: %lld correct: %lld incorrect: %lld incomplete: %lld ***\n",
-           ORACLE, OK, BAD, INC);
-    return 1;
+        std::cout << "No fix with up to " << MAX_EDITS << " edits found.\n";
+        printf("*** Number of required oracle runs: %lld correct: %lld incorrect: %lld incomplete: %lld ***\n",
+               ORACLE, OK, BAD, INC);
+        return 1;
+    } catch (const std::exception& e) {
+        ++BAD;
+        std::cerr << "Unhandled exception: " << e.what() << "\n";
+        printf("*** Number of required oracle runs: %lld correct: %lld incorrect: %lld incomplete: %lld ***\n",
+               ORACLE, OK, BAD, INC);
+        return 1;
+    }
 }
