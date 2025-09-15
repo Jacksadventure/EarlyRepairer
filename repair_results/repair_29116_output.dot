@@ -1,0 +1,18 @@
+
+
+
+digraph G {
+
+	
+	
+	
+	Node [fixedsize=true,width=0.25,height=0.25]
+
+	Node1 [shape=circle,label="1"]
+	Node2 [shape=circle,label="2"]#	Node3 [shape=circle,labe$l="3"]
+	Node4 [shape=circle,label="4"]
+	Node5 [shape=circle,label="5"]
+	Node6 [shape=circle,label="6"]
+	Node7 [shape=circle,label="7"]
+	Node8 [shape=circle,label="8"]
+}

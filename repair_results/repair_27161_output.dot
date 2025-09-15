@@ -1,0 +1,13 @@
+
+
+
+digraph event_hubstates {
+  node [style=filled];
+  edge [color="gray30", fontcolor="gray20", fontsize=12]
+
+  NoAction [label="NoAction\n(Initial)"color="#96FF2F"];
+  NoAction -> PressCaret [label="Press & on a caret"];
+  NoAction -> PressNoCaret [label="Press & not on a caret"];
+  NoAction -> Scroll [label="Scroll start"];
+
+}

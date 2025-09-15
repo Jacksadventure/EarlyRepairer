@@ -9,14 +9,4 @@ besoins[label="Besoins d'information pour \n une problématique parcours"]
 localisation[label="Localisation/Extraction \n des données dans les SI"]
 integration[label="Intégration des données \n pour reconstituer les parcours"]
 transformation[label="Transformation des données brutes \n en concepts utilisateurs"]
-indicateurs[label="Calcul des indicateurs"]
-visualisation[label="DataVisualisation"]
-
-
-besoins -> localisation 
-localisation -> integration 
-integration -> transformation 
-transformation -> indicateurs 
-indicateurs -> visualisation 
-
 }

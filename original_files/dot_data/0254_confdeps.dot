@@ -11,6 +11,4 @@ digraph v3conf {
     "[*/]Makefile.in" -> "Makefile.am";
     "[*/]Makefile.in" -> "configure.ac";
     "config.h" -> "config.h.in"
-    "config.h.in" -> "acconfig.h";
-    "config.h.in" -> "configure.ac";
 }

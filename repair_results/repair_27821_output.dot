@@ -1,0 +1,6 @@
+digraph G {
+	graph [bb="0,0,231,295",
+		xdotversion="1.2"];
+	xyz [label="hello\nworld", color=slateblue, fontsize=24, fontname="Palatino-Italic", syle=filled, fontcolor=hotpink, pos="189,137", width="1.14", height="0.86", _draw_="S 6 -filled c 9 -slateblue C 9 -slateblue E 189 137 41 31 ", _ldraw_="F 24.000000 15 -Palatino-Italic c 7 -hotpink T 189 131 0 38 5 -hello F 24.000000 15 -Palatino-Italic c 7 -hotpink T 189 113 0 43\
+ 5 -world "];
+}

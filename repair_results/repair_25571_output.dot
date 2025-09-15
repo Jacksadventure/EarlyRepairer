@@ -1,0 +1,10 @@
+#GRAPHVIZ_OUTPUT 
+digraph{ 
+rankdir=LR; 
+splines=ortho; 
+YFP[shape=none,label="YFP"]; 
+pTac[shape=none,label="pTac"]; 
+pTet[shape=none,label="pTet"]; 
+pBAD[shape=none,label="pBAD"]; #S4_SrpR[fixedsize=true,height=1.0,width=1.0,label="",shap!=none,image="job_1710841320106_A000_S4_SrpR_gate.png"]; 
+P3_PhlF[fixedsize=true,height=1.0,width=1.0,label="",shape=none,image="job_1710841320106_A000_P3_PhlF_gate.png"]; 
+} 

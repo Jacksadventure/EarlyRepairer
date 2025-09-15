@@ -13,8 +13,4 @@ digraph G {
     "graphviz/rules.png" -> "graphviz/rules.dot" [label = "dot" ];
 
     "slides.tex" -> "ditaa/flow.png";
-    "ditaa/flow.png" -> "ditaa/flow.ditaa" [label = "ditaa"];
-
-    "slides.tex" -> "images/image.jpg";
-    "images/image.jpg" -> "images/image.src" [label = "download"];
 }

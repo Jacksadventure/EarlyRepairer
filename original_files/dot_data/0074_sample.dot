@@ -1,4 +1,4 @@
-// Graphviz example
+
 digraph G {
   A -> B -> C -> D;
   B -> D;

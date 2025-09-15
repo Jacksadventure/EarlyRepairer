@@ -1,6 +1,6 @@
-// Inspired by
-//    https://stackoverflow.com/a/7374543/180275
-// https://renenyffenegger.ch/notes/tools/Graphviz/examples/organization-chart 
+
+
+
 
 digraph ORG {
 
@@ -15,20 +15,4 @@ digraph ORG {
 
   staff_1 [ label = "Staff 1"]
   staff_2 [ label = "Staff 2"]
-  staff_3 [ label = "Staff 3"]
-  staff_4 [ label = "Staff 4"]
-
-  node[shape=none, width=0, height=0, label=""];
-
-  edge[dir=none];
-
-  CEO -> hierarchy_1 -> hierarchy_2 -> hierarchy_3;
-  hierarchy_3 -> hierarchy_4
-
-  {rank=same; CFO -> hierarchy_1 -> HR;}
-  {rank=same; CxO -> hierarchy_2;}
-  {rank=same; staff_1 -> staff_2 -> hierarchy_4 -> staff_3 -> staff_4 }
-
-
-
 }

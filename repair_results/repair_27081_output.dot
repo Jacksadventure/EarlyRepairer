@@ -1,0 +1,30 @@
+digraph prolog {
+
+# *************
+# Graph options
+# *************
+
+newrank=true;
+concentrate=true;
+compound=true;
+graph [rankdir=LR,fontname=Helvetica,fontsize=10,ranksep=1.5];#, ranksep=2.5, nodesep=0.2];
+edge  [arrowhead=vee];
+subgraph cluster_leftcol {
+}
+subgraph cluster_midcol {
+subgraph cluster_compile {
+}
+ubgraph cluster_compileandrun {
+}
+subgraph cluster_run {
+subgraph cond111989 {
+subgraph pack304388 {
+}
+}
+}
+}
+subgraph cluster_choices {
+subgraph choice303490 {
+}
+}
+}

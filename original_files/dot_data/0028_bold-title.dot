@@ -1,4 +1,4 @@
-// http://stackoverflow.com/questions/6171344/graphviz-record-node-with-a-bold-title
+
 digraph i { 
   "node" [
     label =<

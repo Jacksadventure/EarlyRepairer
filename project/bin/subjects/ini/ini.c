@@ -337,14 +337,25 @@ char* read_input() {
 int main(int argc, char** argv) {
     configuration config;
     if (argc > 1) {
-      v = fopen(argv[1], "r");
+        // Try to open as a file, if fails, try as a file descriptor
+        v = fopen(argv[1], "r");
+        if (!v) {
+            if (strncmp(argv[1], "/dev/fd/", 8) == 0) {
+                int fd = atoi(argv[1] + 8);
+                if (fd > 0) {
+                    v = fdopen(fd, "r");
+                }
+            }
+        }
+        if (!v) {
+            fprintf(stderr, "Failed to open input file: %s\n", argv[1]);
+            exit(2);
+        }
     } else {
-      v = stdin;
+        v = stdin;
     }
     char* string = read_input();
-    if (argc > 1) {
-      fclose(v);
-    }
+
     //printf(string);
     //int num = 999;
     //num = ini_parse_string(string, handler, &config);
@@ -363,6 +374,12 @@ int main(int argc, char** argv) {
 
     int ret = ini_parse_string(string, handler, &config);
     printf("\nLineno %d/%d", ret, actual_linenos);
+
+    // Only close v if it was opened (not stdin)
+    if (argc > 1 && v && v != stdin) {
+        fclose(v);
+    }
+
     if (ret > 0){
         if (ret >= actual_linenos){
             if (comment_after_incomplete){

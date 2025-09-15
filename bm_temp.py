@@ -11,7 +11,7 @@ import argparse
 # ------------------------------------------------------------------------------
 # Configuration
 # ------------------------------------------------------------------------------
-DATABASE_PATH = "single.db"  # Name of the new database to create
+DATABASE_PATH = "double.db"  # Name of the new database to create
 REPAIR_OUTPUT_DIR = "repair_results"  # Directory where repair outputs are stored
 os.makedirs(REPAIR_OUTPUT_DIR, exist_ok=True)
 
@@ -30,14 +30,13 @@ PROJECT_PATHS = {
 # Valid formats/folders to process
 VALID_FORMATS = ["ini", "json", "lisp", "c", "obj", "dot"]
 
-
-MUTATION_TYPES = ["single"]
+MUTATION_TYPES = ["double"]
 
 # Parser timeout (in seconds)
 VALIDATION_TIMEOUT = 30
 
 # Repair timeout (in seconds)
-REPAIR_TIMEOUT = 2400
+REPAIR_TIMEOUT = 1200
 
 # ------------------------------------------------------------------------------
 # Helper functions
@@ -306,8 +305,8 @@ def repair_and_update_entry(cursor, conn, row):
 
 def rerun_repairs_for_selected_formats(db_path: str, selected_formats=None, max_workers=None):
     """
-    Re-run (or run for the first time) repairs for the specified formats.
-    If selected_formats is None, it will use all in VALID_FORMATS.
+    Re-run repairs ONLY for entries that previously failed (fixed=0) AND
+    have been attempted at least once.
     """
     if not selected_formats:
         selected_formats = VALID_FORMATS
@@ -315,7 +314,7 @@ def rerun_repairs_for_selected_formats(db_path: str, selected_formats=None, max_
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # Fetch entries for the desired formats
+    # Only previously failed AND attempted entries
     cursor.execute("""
         SELECT id, format, file_id, corrupted_index, algorithm,
                original_text, broken_text, repaired_text, fixed,
@@ -324,14 +323,13 @@ def rerun_repairs_for_selected_formats(db_path: str, selected_formats=None, max_
                distance_original_repaired
         FROM results
         WHERE fixed = 0
-        ORDER BY id DESC
     """)
     entries = cursor.fetchall()
 
     # Filter only those in the selected formats
     filtered_entries = [row for row in entries if row[1] in selected_formats]
 
-    print(f"[INFO] Found {len(filtered_entries)} entries to (re)process.")
+    print(f"[INFO] Found {len(filtered_entries)} previously failed entries to reprocess.")
 
     def _worker(row):
         # Each thread uses its own connection to avoid SQLite locking issues
@@ -361,7 +359,9 @@ def main():
     parser.add_argument("--formats", nargs="+", choices=VALID_FORMATS, help="Formats to include (default: all)")
     parser.add_argument("--mutations", nargs="+", default=MUTATION_TYPES, help="Mutation types to include")
     parser.add_argument("--algorithms", nargs="+", choices=REPAIR_ALGORITHMS, help="Override algorithms to run")
-    parser.add_argument("--resume-only", action="store_true", help="Skip sample insertion, only resume unfinished repairs")
+    # Default to resume-only so we don't insert/run new samples unless explicitly requested
+    parser.add_argument("--resume-only", action="store_true", default=True,
+                        help="Only resume unfinished/failed repairs (default: True). Disable to (re)insert samples.")
     parser.add_argument("--max-workers", type=int, help="Max parallel workers (default: cpu count)")
     args = parser.parse_args()
 
@@ -374,7 +374,7 @@ def main():
     # 1) Create or reuse the database
     create_database(db_path)
 
-    # 2) Optionally insert tasks (idempotent)
+    # 2) Optionally insert tasks (idempotent) — only when resume-only is OFF
     if not args.resume_only:
         for mutation_type in args.mutations:
             for fmt in (args.formats if args.formats else VALID_FORMATS):
@@ -388,7 +388,8 @@ def main():
 
                 print(f"[INFO] Loading samples from {mutation_db_path}")
                 samples = load_test_samples_from_db(mutation_db_path)
-                
+                # 保留每个格式前100个测试样例
+                samples = samples[:100]
                 if samples:
                     # Insert each sample into the 'results' table for *each* algorithm
                     format_key = f"{mutation_type}_{fmt}"
@@ -396,7 +397,7 @@ def main():
                 else:
                     print(f"[INFO] No samples found in '{mutation_db_path}'")
 
-    # 3) Resume/Run unfinished repairs
+    # 3) Resume/Run previously failed repairs ONLY
     formats_for_rerun = [f"{m}_{f}" for m in args.mutations for f in (args.formats if args.formats else VALID_FORMATS)]
     rerun_repairs_for_selected_formats(db_path, selected_formats=formats_for_rerun, max_workers=args.max_workers)
 

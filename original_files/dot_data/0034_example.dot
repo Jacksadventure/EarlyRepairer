@@ -1,4 +1,4 @@
-# http://www.graphviz.org/content/cluster
+# http:
 
 digraph G {
   subgraph cluster_0 {

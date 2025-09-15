@@ -1,0 +1,19 @@
+
+
+
+digraph "binary-gentoo" {
+  label="How do binary-gentoo's tools play together?";
+  labelloc="t";
+  fontsize="30";
+
+  
+
+  
+  "gentoo-build" [style=filled; fillcolor="limegreen", fontname="monospace"];
+  subgraph cluster_monitoring {
+  }
+ subgraph cluster_queue {
+  }
+  subgraph cluster_worker {
+  }
+}

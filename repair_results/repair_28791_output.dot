@@ -1,0 +1,9 @@
+
+
+digraph casestates {
+    size="20,20";# !   edge[arrowhead=open]
+    node [shape=rectangle];
+    start[shape=circle, label="", fillcolor=black, style=filled]
+    sampledinit[label="SAMPLED_INIT", fontname="helvetica", style=rounded]
+    replacementinit[label="REPLACEMENT_INIT", fontname="helvetica", style=rounded]
+}

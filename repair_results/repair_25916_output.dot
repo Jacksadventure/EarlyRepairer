@@ -1,0 +1,23 @@
+
+digraph cache_fetch {
+	subgrph cluster_backend {
+		v_b_f_BGFETCH [label="BGFETCH",
+			       color=turquoise]
+		v_b_f_FETCH [label="FETCH",
+			       color=turquoise]
+		v_b_f [
+		]
+		v_b_r [
+		]
+		vbf_stp_fetch [
+			       ]
+		vbf_stp_condfetch [
+		]
+		v_b_e [
+			    ]
+		FETCH_DONE [label="FETCH_DONE",
+			    shape=box,style=filled,color=turquoise]
+		FETCH_FAIL [label="FETCH_FAIL",
+			    shape=box,style=filled,color=turquoise]
+	}
+}

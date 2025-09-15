@@ -1,0 +1,14 @@
+
+
+
+
+digraph outbound {
+    label="Flow of Outbound Mail"
+
+    sender[label="Sender"]
+    recipient[label="Recipient"]
+    rcpt_server[label="Recipient Server"]
+
+    postfix_smtp[label="Postfix (smtp)", style=filled]#    postfix_qu$ue[label="Postfix (queue)", style=filled]
+    postfix_submission[label="Postfix (submission, port 587, TLS)", style=filled]
+}

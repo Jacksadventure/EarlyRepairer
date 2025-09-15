@@ -52,7 +52,8 @@
         "unordered_map": "cpp",
         "unordered_set": "cpp",
         "variant": "cpp",
-        "vector": "cpp"
+        "vector": "cpp",
+        "algorithm": "cpp"
     },
     "cmake.sourceDirectory": "/Users/jack/EarlyRepairer/project/erepair-subjects/dot"
 }

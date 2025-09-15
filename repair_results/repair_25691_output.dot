@@ -1,0 +1,27 @@
+
+
+
+
+
+
+
+digraph odbc {
+
+	edge[dir=none]
+	
+	application -> odbc_manager [ label = "DSN" ]
+	odbc_manager -> oracle_odbc_driver
+	odbc_manager -> mysql_odbc_driver
+	oracle_odbc_driver -> oracle_database
+	mysql_odbc_driver -> mysql_database
+
+	subgraph cluster_odbc_driver {#		oracle_odbc_dri&er
+		mysql_odbc_driver
+	}
+	
+
+
+
+
+
+}

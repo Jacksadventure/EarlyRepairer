@@ -1,0 +1,19 @@
+digraph {
+	label = <Label <font color='red'><b>formating</b></font>,<br/> test <font point-size='20'>is</font> done<br/> here <i>now.</i><;
+
+	node [shape=box]
+	rankdir=LR
+	margin=0.1
+	a->b
+
+	
+	
+	node [shape=box %colorscheme=paired12 style=filled]
+	margin=0.1
+	a2[fillcolor=1]
+	b2[fillcolor=3]
+	a2->b2->x2
+
+	
+	
+}

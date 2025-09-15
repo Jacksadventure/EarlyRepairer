@@ -1,4 +1,4 @@
-// This file is generated automatically by S-GRAPHVIZ.
+
 
 digraph {
   rankdir = "LR";
@@ -18,9 +18,4 @@ digraph {
   lr_5 -> lr_7 [label = "S(b)"];
   lr_5 -> lr_5 [label = "S(a)"];
   lr_6 -> lr_6 [label = "S(b)"];
-  lr_6 -> lr_5 [label = "S(a)"];
-  lr_7 -> lr_8 [label = "S(b)"];
-  lr_7 -> lr_5 [label = "S(a)"];
-  lr_8 -> lr_6 [label = "S(b)"];
-  lr_8 -> lr_5 [label = "S(a)"];
 }

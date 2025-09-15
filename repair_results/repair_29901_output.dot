@@ -1,0 +1,18 @@
+digraph systemDiagram {
+  # Install graphviz and run `fdp -Tpng system.dot -o system_diagram.png`
+  subgraph cluster0 {
+    label="System Diagram";
+    node [shape=record];
+    registrant [label="Registrant"];
+    subgraph cluster_cloud {
+      label="cloud.gov";
+      node [shape=record];
+      postgres [label="Postgres Database"];
+      subgraph cluster_django {
+        label="Django MVC";
+        node [shape=record];
+        models [pos="0,1!" label="Database ORM"];
+      }
+    }
+  }
+}

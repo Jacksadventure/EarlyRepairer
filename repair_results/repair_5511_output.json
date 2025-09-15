@@ -1,0 +1,4 @@
+{
+    "title": "Federated reinforcement learning for robot motion planning with zero-shot generalization",
+    "en_tdlr": "This paper introduces a federated reinforcement learning framework for robot motion planning with zero-shot generalization, enabling collaborative learning of multiple lea%ners and a central server to achieve global optimum without sharing raw data."
+}

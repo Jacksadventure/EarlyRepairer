@@ -1,0 +1,4 @@
+
+digraph inclusions {
+    label="File inclusion tree";#                           &     "~/nexml/xsd/abstract.xsd" [URL="/doc/schema-1/abstract/",shape=box,color=lightgrey,style=filled];        
+            }

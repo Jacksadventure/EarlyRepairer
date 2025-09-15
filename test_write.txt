@@ -1,0 +1,1 @@
+File write test: If you see this file, writing to the current directory works.

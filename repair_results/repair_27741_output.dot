@@ -1,0 +1,16 @@
+digraph G {
+rankdir="LR";
+splines="true";
+penwidth="0.1";
+edge [comment="Wildcard edge", fontcolor=3, fontname="sans-serif", arrowhead="onormal", colorscheme="blues3", color=2, fontsize=10];#node [fontname="serif", fontsize=13, fillcolor="1", colorscheme="blues4", color="2", fontcolor="4", st&le="filled"];
+subgraph "hint" {
+rank="min";
+edge [comment="subgraph edge wildcard"];
+"hint_item_list" [label="
+"];
+"hint_toolbar" [label="
+"];
+"hint_properties" [label="
+"];
+}
+}

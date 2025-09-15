@@ -9,7 +9,6 @@
   "TagContainer": {
     "List": [
       {
-        "Tag": "Prop.Component.TimeRewindEntity",
         "TagHash": 532483231
       }
     ]
@@ -17,18 +16,7 @@
   "TagComponents": {
     "TagComponents": [
       {
-        "$type": "RPG.GameCore.PropTagTimeRewindEntityComponent",
-        "TimeRewindObjectType": "Bridge",
-        "InitState": "L0_Idle",
-        "AnimStateOverride": [],
-        "TimeRewindAnimEventJson": "Config/Gameplays/TimeRewind/TimeRewinder_BridgeAnimConfig_03.json",
-        "DetectColliderAttachPoint": "DetectColliderAttachPoint",
-        "FoundationAndBallBind": {},
-        "DestructibleBridgeBind": {},
-        "ContainerAndSeedBind": {},
         "Tag": {
-          "Tag": "Prop.Component.TimeRewindEntity",
-          "TagHash": 532483231
         }
       }
     ]

@@ -257,14 +257,27 @@ char* read_input() {
 
 int main(int argc, char** argv) {
     if (argc > 1) {
-      v = fopen(argv[1], "r");
+        // Try to open as a file, if fails, try as a file descriptor
+        v = fopen(argv[1], "r");
+        if (!v) {
+            if (strncmp(argv[1], "/dev/fd/", 8) == 0) {
+                int fd = atoi(argv[1] + 8);
+                if (fd > 0) {
+                    v = fdopen(fd, "r");
+                }
+            }
+        }
+        if (!v) {
+            fprintf(stderr, "Failed to open input file: %s\n", argv[1]);
+            exit(2);
+        }
     } else {
-      v = stdin;
+        v = stdin;
     }
     char* string = read_input();
     printf("%s", string);
     if (argc > 1) {
-      fclose(v);
+        fclose(v);
     }
     int i =  0;
     //                                   file, delimiter, first_line_is_header?

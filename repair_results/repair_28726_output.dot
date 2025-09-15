@@ -1,0 +1,20 @@
+
+digraph SEQ_DIAGRA {
+    graph [overlap=true, splines=line, nodesep=1.0, ordering=out];
+    edge [arrowhead=none];
+    node [shape=none, width=0, height=0, label=""];
+
+    {
+        rank=same;
+        node[shape=rectangle, height=0.7, width=2];
+        api_a[label="Client"];
+        api_b[label="Network"];
+        api_c[label="Server"];
+    }
+    {
+    }
+    {
+    }
+    {
+    }
+}

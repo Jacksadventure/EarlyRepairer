@@ -1,0 +1,55 @@
+{
+    "cve": {
+        "CVE_data_meta": {
+        },
+        "problemtype": {
+            "problemtype_data": [
+                {
+                    "description": [
+                        {
+                        }
+                    ]
+                }
+            ]
+        },
+        "references": {
+            "reference_data": [
+                {
+                    "tags": [
+                    ]
+                },
+                {
+                    "tags": [                    ]
+                },
+                {
+                    "tags": [
+                    ]
+                }
+            ]
+        },
+        "description": {
+            "description_data": [
+                {
+                }
+            ]
+        }
+    },
+    "configurations": {
+        "nodes": [
+            {
+                "cpe_match": [
+                    {
+                    }
+                ]
+            }
+        ]
+    },
+    "impact": {
+        "baseMetricV3": {
+            "cvssV3": {
+            },
+            "impactScore": 3.6
+        }
+    },
+    "lastModifiedDate": "2024-11-21T07:52Z"
+}

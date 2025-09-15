@@ -1,0 +1,17 @@
+
+
+
+
+
+digraph G {
+    label="Merkle leaf = hash(hash(challenge + data))"
+
+    rankdir = BT;
+
+    "00" -> 0;
+    "01" -> 0;
+    "10" -> 1;
+    "11" -> 1;
+    0 ->< "Merkle root"
+    1 -&> "Merkle root"
+}

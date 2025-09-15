@@ -16,9 +16,8 @@ REPAIR_OUTPUT_DIR = "repair_results"  # Directory where repair outputs are store
 os.makedirs(REPAIR_OUTPUT_DIR, exist_ok=True)
 
 # Possible repair algorithms you want to test
-REPAIR_ALGORITHMS = ["DDMax", "erepair", "DDMaxG", "Antlr"]
+REPAIR_ALGORITHMS = ["earley"]
 
-# Paths to the external format validators (adjust as needed)
 PROJECT_PATHS = {
     "dot": "project/erepair-subjects/dot/build/dot_parser",
     "ini": "project/erepair-subjects/ini/ini",
@@ -29,7 +28,8 @@ PROJECT_PATHS = {
 }
 
 # Valid formats/folders to process
-VALID_FORMATS = ["ini", "json", "lisp", "c"]
+VALID_FORMATS = ["ini", "json", "lisp", "c", "obj", "dot"]
+
 
 MUTATION_TYPES = ["double"]
 
@@ -37,7 +37,7 @@ MUTATION_TYPES = ["double"]
 VALIDATION_TIMEOUT = 30
 
 # Repair timeout (in seconds)
-REPAIR_TIMEOUT = 240
+REPAIR_TIMEOUT = 600
 
 # ------------------------------------------------------------------------------
 # Helper functions
@@ -236,6 +236,13 @@ def repair_and_update_entry(cursor, conn, row):
             print(f"[ERROR] No oracle executable for format {base_format}")
             return
         cmd = ["./erepair", oracle_executable, input_file, output_file]
+    elif algorithm == "earley":
+        base_format = format_key.split('_')[-1]
+        oracle_executable = PROJECT_PATHS.get(base_format)
+        if not oracle_executable:
+            print(f"[ERROR] No oracle executable for format {base_format}")
+            return
+        cmd = ["./earleyrepairer", oracle_executable, input_file, output_file]
     else:
         # Example usage of your erepair.jar approach
         cmd = [
@@ -326,7 +333,7 @@ def rerun_repairs_for_selected_formats(db_path: str, selected_formats=None, max_
     print(f"[INFO] Found {len(filtered_entries)} entries to (re)process.")
 
     def _worker(row):
-        # Each thread gets its own connection to avoid SQLite locking
+        # Each thread uses its own connection to avoid SQLite locking issues
         thread_conn = sqlite3.connect(db_path, timeout=30)
         thread_cursor = thread_conn.cursor()
         try:
@@ -370,7 +377,7 @@ def main():
     if not args.resume_only:
         for mutation_type in args.mutations:
             for fmt in (args.formats if args.formats else VALID_FORMATS):
-                # Construct DB path, e.g., mutated_files/double_ini.db
+                # Construct DB path, e.g., mutated_files/single_dot.db
                 db_name = f"{mutation_type}_{fmt}.db"
                 mutation_db_path = os.path.join("mutated_files", db_name)
 
@@ -380,7 +387,8 @@ def main():
 
                 print(f"[INFO] Loading samples from {mutation_db_path}")
                 samples = load_test_samples_from_db(mutation_db_path)
-                
+                # 保留每个格式前100个测试样例
+                samples = samples[:100]
                 if samples:
                     # Insert each sample into the 'results' table for *each* algorithm
                     format_key = f"{mutation_type}_{fmt}"

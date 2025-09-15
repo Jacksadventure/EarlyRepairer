@@ -1,4 +1,4 @@
-# Use http://graphviz-dev.appspot.com/ to visualize the graph
+# Use http:
 digraph g {
 
       "not deployed" -> deploying -> "deployed - stopped" -> starting;
@@ -9,5 +9,4 @@ digraph g {
 
       "not deployed" [ fillcolor="bisque", style="filled" ];
       "deployed - started" [ fillcolor="bisque", style="filled" ];
-      "deployed - stopped" [ fillcolor="bisque", style="filled" ];
 }

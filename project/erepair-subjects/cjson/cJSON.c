@@ -3039,23 +3039,37 @@ char* read_input() {
 
 int main(int argc, char** argv) {
     if (argc > 1) {
-      v = fopen(argv[1], "r");
+        // Try to open as a file, if fails, try as a file descriptor
+        // Try to open as a file, if fails, try as a file descriptor
+        v = fopen(argv[1], "r");
+        if (!v) {
+            if (strncmp(argv[1], "/dev/fd/", 8) == 0) {
+                int fd = atoi(argv[1] + 8);
+                if (fd > 0) {
+                    v = fdopen(fd, "r");
+                }
+            }
+        }
+        if (!v) {
+            fprintf(stderr, "Failed to open input file: %s\n", argv[1]);
+            exit(2);
+        }
     } else {
-      v = stdin;
+        v = stdin;
     }
     char* string = read_input();
-    printf(string);
+    // printf(string); // Dangerous: do not print untrusted input as format string
+    printf("%s", string);
     init_tri();
     cJSON *json = cJSON_Parse(string);
     if (argc > 1) {
-      fclose(v);
+        fclose(v);
     }
+    free(string);
     if (json == NULL) {
         printf("Invalid json.\n");
         exit(1);
     }
-    //printf(cJSON_Print(json));
+    // printf(cJSON_Print(json));
     exit(0);
-
 }
-

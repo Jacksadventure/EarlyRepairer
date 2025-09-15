@@ -16,7 +16,7 @@ REPAIR_OUTPUT_DIR = "repair_results"  # Directory where repair outputs are store
 os.makedirs(REPAIR_OUTPUT_DIR, exist_ok=True)
 
 # Possible repair algorithms you want to test
-REPAIR_ALGORITHMS = ["earley"]
+REPAIR_ALGORITHMS = ["earley","erepair","DDMax","DDMaxG","Antlr"]
 
 PROJECT_PATHS = {
     "dot": "project/erepair-subjects/dot/build/dot_parser",
@@ -37,7 +37,7 @@ MUTATION_TYPES = ["single"]
 VALIDATION_TIMEOUT = 30
 
 # Repair timeout (in seconds)
-REPAIR_TIMEOUT = 2400
+REPAIR_TIMEOUT = 240
 
 # ------------------------------------------------------------------------------
 # Helper functions

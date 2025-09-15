@@ -10,5 +10,5 @@
 	note [ label = "powered by graphviz" fontsize = 8 shape = box];
 }
 
-// circo -Tgif -o weekly_report.gif weekly_report.dot
+
 

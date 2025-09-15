@@ -1,0 +1,22 @@
+digraph g {
+	graph [bb="0,0,964,900",
+		xdotversion="1.2"];
+	node0 [label="<f0> |<f1> G|<f2> ", height="0.28", pos="32,251", rects="1,241,20,261 20,241,44,261 44,241,63,261", width="0.86", _draw_="c 5 -black p 4 1 241 1 261 63 261 63 241 c 5 -black L 2 20 241 20 261 c 5 -black L 2 44 241 44 261 ", _ldraw_="F 14.000000 11 -Times-Roman c 5 -black T 10 243 0 3 1 -  F 14.000000 11 -Times-Roman c 5 -black T 32 243 0 8 1 -G F 14.000000 11\
+ -Times-Roman c 5 -black T 53 243 0 3 1 -  "];
+	node1 [label="<f0> |<f1> E|<f2> ", height="0.28", pos="566,251", rects="536,241,555,261 555,241,577,261 577,241,596,261", width="0.83", _draw_="c 5 -black p 4 536 241 536 261 596 261 596 241 c 5 -black L 2 555 241 555 261 c 5 -black L 2 577 241 577 261 ", _ldraw_="F 14.000000 11 -Times-Roman c 5 -black T 545 243 0 3 1 -  F 14.000000 11 -Times-Roman c 5 -black T 566 243 0 6 1 -E F 14.000000 \
+11 -Times-Roman c 5 -black T 586 243 0 3 1 -  "];
+	node2 [label="<f0> |<f1> B|<f2> ", height="0.28", pos="800,123", rects="770,113,789,133 789,113,812,133 812,113,831,133", width="0.83", _draw_="c 5 -black p 4 770 113 770 133 831 133 831 113 c 5 -black L 2 789 113 789 133 c 5 -black L 2 812 113 812 133 ", _ldraw_="F 14.000000 11 -Times-Roman c 5 -black T 779 115 0 3 1 -  F 14.000000 11 -Times-Roman c 5 -black T 800 115 0 7 1 -B F 14.000000 \
+11 -Times-Roman c 5 -black T 821 115 0 3 1 -  "];
+	node3 [label="<f0> |<f1> F|<f2> ", height="0.28", pos="800,379", rect="770,369,789,389 789,369,811,389 811,369,830,389", width="0.83", _draw_="c 5 -black p 4 770 369 770 389 830 389 830 369 c 5 -black L 2 789 369 789 389 c 5 -black L 2 811 369 811 389 ", _ldraw_="F 14.000000 11 -Times-Roman c 5 -black T 779 371 0 3 1 -  F 14.000000 11 -Times-Roman c 5 -black T 800 371 0 6 1 -F F 14.000000 \
+11 -Times-Roman c 5 -black T 820 371 0 3 1 -  "];
+	node4 [label="<f0> |<f1> R|<f2> ", height="0.28", pos="200,758", rects="170,748,189,768 189,748,212,768 212,748,231,768", width="0.83", _draw_="c 5 -black p 4 170 748 170 768 231 768 231 748 c 5 -black L 2 189 748 189 768 c 5 -black L 2 212 748 212 768 ", _ldraw_="F 14.000000 11 -Times-Roman c 5 -black T 179 750 0 3 1 -  F 14.000000 11 -Times-Roman c 5 -black T 200 750 0 7 1 -R F 14.000000 \
+11 -Times-Roman c 5 -black T 221 750 0 3 1 -  "];
+	node5 [label="<f0> |<f1> H|<f2> ", height="0.28", pos="298,849", rects="267,839,286,859 286,839,310,859 310,839,329,859", width="0.86", _draw_="c 5 -black p 4 267 839 267 859 329 859 329 839 c 5 -black L 2 286 839 286 859 c 5 -black L 2 310 839 310 859 ", _ldraw_="F 14.000000 11 -Times-Roman c 5 -black T 276 841 0 3 1 -  F 14.000000 11 -Times-Roman c 5 -black T 298 841 0 8 1 -H F 14.000000 \
+11 -Times-Roman c 5 -black T 319 841 0 3 1 -  "];
+	node6 [label="<f0> |<f1> Y|<f2> ", height="0.28", pos="176,889", rects="145,879,164,899 164,879,188,899 188,879,207,899", width="0.86", _draw_="c 5 -black p 4 145 879 145 899 207 899 207 879 c 5 -black L 2 164 879 164 899 c 5 -black L 2 188 879 188 899 ", _ldraw_="F 14.000000 11 -Times-Roman c 5 -black T 154 881 0 3 1 -  F 14.000000 11 -Times-Roman c 5 -black T 176 881 0 8 1 -Y F 14.000000 \
+11 -Times-Roman c 5 -black T 197 881 0 3 1 -  "];
+	node7 [label="<f0> |<f1> A|<f2> ", height="0.28", pos="872,11", rects="841,1,860,21 860,1,884,21 884,1,903,21", width="0.86", _draw_="c 5 -black p 4 841 1 841 21 903 21 903 1 c 5 -black L 2 860 1 860 21 c 5 -black L 2 884 1 884 21 ", _ldraw_="F 14.000000 11 -Times-Roman c 5 -black T 850 3 0 3 1 -  F 14.000000 11 -Times-Roman c 5 -black T 872 3 0 8 1 -A F 14.000000 11 -\
+Times-Roman c 5 -black T 893 3 0 3 1 -  "];
+	node8 [label="<f0> |<f1> C|<f2> ", height="0.28", pos="933,123", rects="903,113,922,133 922,113,945,133 945,113,964,133", width="0.83", _draw_="c 5 -black p 4 903 113 903 133 964 133 964 113 c 5 -black L 2 922 113 922 133 c 5 -black L 2 945 113 945 133 ", _ldraw_="F 14.000000 11 -Times-Roman c 5 -black T 912 115 0 3 1 -  F 14.000000 11 -Times-Roman c 5 -black T 933 115 0 7 1 -C F 14.000000 \
+11 -Times-Roman c 5 -black T 954 115 0 3 1 -  "];
+}

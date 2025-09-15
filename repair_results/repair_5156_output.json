@@ -1,0 +1,66 @@
+{
+  "properties": {
+    "awsElasticBlockStore": {
+    },
+    "azureDisk": {
+    },
+    "azureFile": {
+    },
+    "cephfs": {
+    },
+    "cinder": {
+    },
+    "configMap": {
+    },
+    "csi": {
+    },
+    "downwardAPI": {
+    },
+    "emptyDir": {
+    },
+    "fc": {
+    },
+    "flexVolume": {
+    },
+    "flocker": {
+    },
+    "gcePersistentDisk": {
+    },
+    "gitRepo": {
+    },
+    "glusterfs": {
+    },
+    "hostPath": {
+    },
+    "iscsi": {
+    },
+    "name": {
+      "type": [
+      ]
+    },
+    "nfs": {
+    },
+    "persistentVolumeClaim": {
+    },
+    "photonPersistentDisk": {
+    },
+    "portworxVolume": {
+    },
+    "projected": {
+    },
+    "quobyte": {
+    },
+    "rbd": {
+    },
+    "scaleIO": {
+    },
+    "secret": {
+    },
+    "storageos": {
+    },
+    "vsphereVolume": {
+    }
+  },
+  "required": [
+  ],
+  "$schema": "http://json-schema.org/schema#"}

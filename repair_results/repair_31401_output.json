@@ -1,0 +1,24 @@
+{
+  "description": "Represents a StorageOS persistent volume resource.",
+  "properties": {
+    "fsType": {
+      "type": [
+      ]
+    },
+    "readOnly": {
+      "type": [
+      ]
+    },
+    "secretRef": {
+    },
+    "volumeName": {
+     "type": [
+      ]
+    },
+    "volumeNamespace": {
+      "type": [
+      ]
+    }
+  },
+  "$schema": "http://json-schema.org/schema#"
+}

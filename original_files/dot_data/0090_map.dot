@@ -1,10 +1,4 @@
-/* 
-generate pyModbusTCP map as PNG
-(need sudo apt-get install graphviz)
 
-command:
-dot -Tpng map.dot > map.png
-*/
 
 digraph pyModbusTCP_map {
     "pyModbusTCP" -> "client";

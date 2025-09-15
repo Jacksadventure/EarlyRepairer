@@ -13,7 +13,4 @@ digraph G
     onTestMethodStart -> onTestMethodEnd
     onTestMethodEnd -> onTestMethodStart
     onTestMethodEnd -> onTestCaseEnd
-    onTestCaseEnd -> onTestCaseStart
-    onTestCaseEnd -> onGlobalEnd
-
 }

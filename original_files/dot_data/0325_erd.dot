@@ -1,8 +1,4 @@
-/*
-  Record-based Nodes
-  http://www.graphviz.org/content/node-shapes#record
-  dot -Tpng class.dot -o class.png
-*/
+
 
 graph db_blog {
   node [shape=box];

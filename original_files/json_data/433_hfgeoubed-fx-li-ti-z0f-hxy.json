@@ -8,30 +8,16 @@
     "positive": 0.0,
     "sn_status": "approved",
     "branding": {
-        "temporalLabelDD": "ti",
-        "verticalLabelDD": "z0",
-        "horizontalLabelDD": "hxy",
         "areaLabelDD": "gis"
     },
-    "definition_qualifier": "none",
-    "brand_description": "upward geothermal heat flux at ground level in land ice: time-independent field reported on a 2-d horizontal grid where grounded_ice_sheet",
-    "bn_status": "accepted",
     "dimensions": [
-        "xgre",
-        "ygre",
-        ""
     ],
-    "cell_methods": "area: mean where grounded_ice_sheet",
-    "cell_measures": "area: areacellg",
     "samplingIntervals": [
-        "fx"
     ],
     "regions": [
-        "greenland"
     ],
     "used_in": {
         "cmip6": {
-            "@id": "dr:cmip6/hfgeoubed-fx-li-ti-z0f-hxy"
         }
     }
 }

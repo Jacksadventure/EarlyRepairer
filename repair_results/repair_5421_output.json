@@ -1,0 +1,72 @@
+{
+    "cve": {
+        "descriptions": [
+            {
+            },
+            {
+            }
+        ],
+        "metrics": {
+            "cvssMetricV30": [
+                {
+                    "cvssData": {
+                    },
+                    "impactScore": 3.6
+                }
+            ],
+            "cvssMetricV2": [
+                {
+                   "cvssData": {
+                    },
+                    "userInteractionRequired": false
+                }
+            ]
+        },
+        "weaknesses": [
+            {
+                "description": [
+                    {
+                    }
+                ]
+            }
+        ],
+        "configurations": [
+            {
+                "nodes": [
+                    {
+                        "cpeMatch": [
+                            {
+                            },
+                            {
+                            },
+                            {
+                            },
+                            {
+                            },
+                            {
+                            }
+                        ]
+                    }
+                ]
+            }
+        ],
+        "references": [
+            {
+                "tags": [
+                ]
+            },
+            {
+                "tags": [
+                ]
+            },
+            {
+                "tags": [
+                ]
+            },
+            {
+                "tags": [
+                ]
+            }
+        ]
+    }
+}

@@ -1,0 +1,9 @@
+
+digraph G {
+	graph [mindist=0.5];
+	node [texmode="math", shape=circle, style="circle, fill=green!20"];
+	edge [lblstyle="above,sloped"];
+	d2ttikzedgelabels=true;#	c -> n_1 [ar%owhead="normal", label="normal"];
+	c -> n_2 [arrowhead="inv", label="inv"];
+	c -> n_3 [arrowhead="dot", label="dot"];
+}

@@ -46,17 +46,40 @@ public:
     }
 };
 
+#include <fcntl.h>
+#include <unistd.h>
+
 int main(int argc, const char* argv[]) {
     /* ---------- 0. file open ------------------------------------- */
     if (argc < 2) {
         std::cerr << "Usage: " << argv[0] << " <file.dot>\n";
         return 2;
     }
-    std::ifstream in(argv[1], std::ios::in | std::ios::binary);
-    if (!in) { perror("open"); return 2; }
+
+    std::unique_ptr<std::istream> in_ptr;
+    std::ifstream file_in;
+    FILE* fd_file = nullptr;
+    int fd = -1;
+    bool using_fd = false;
+
+    if (strncmp(argv[1], "/dev/fd/", 8) == 0) {
+        fd = atoi(argv[1] + 8);
+        if (fd > 0) {
+            fd_file = fdopen(fd, "r");
+            if (fd_file) {
+                in_ptr.reset(new std::istream(fd_file->rdbuf()));
+                using_fd = true;
+            }
+        }
+    }
+    if (!using_fd) {
+        file_in.open(argv[1], std::ios::in | std::ios::binary);
+        if (!file_in) { perror("open"); return 2; }
+        in_ptr.reset(&file_in, [](...){}); // no-op deleter for stack object
+    }
 
     /* ---------- 1. ANTLR setup ----------------------------------- */
-    antlr4::ANTLRInputStream  input(in);
+    antlr4::ANTLRInputStream  input(*in_ptr);
     DOTLexer                  lexer(&input);
     antlr4::CommonTokenStream tokens(&lexer);
     DOTParser                 parser(&tokens);

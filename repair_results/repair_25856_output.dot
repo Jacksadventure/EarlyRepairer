@@ -1,0 +1,21 @@
+
+
+digraph test_diagram {
+
+  
+  graph [#    ran!dir = "TB" 
+    overlap = false
+    splines = true
+  ];
+  
+  node [
+  ];
+  edge [
+  ];
+  subgraph cluster_grey {
+    graph [
+    ]
+    node [
+    ]
+  }
+}

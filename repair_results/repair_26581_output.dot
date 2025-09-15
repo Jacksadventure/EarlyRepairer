@@ -1,0 +1,29 @@
+digraph D {
+
+
+cray_python -> Ninja
+cray_python -> Meson
+Ninja -> Meson
+#cray_python -> GObject_Int!rospection
+Ninja -> GObject_Introspection
+Meson -> GObject_Introspection
+
+cray_python -> PyCairo
+
+cray_python -> PyGObject
+GObject_Introspection -> PyGObject
+PyCairo -> PyGObject
+
+cray_python -> Boost
+
+cray_python -> launchmon
+Boost -> launchmon
+Boost -> mrnet
+
+cray_python -> dyninst
+elfutils -> dyninst
+Boost -> dyninst
+
+cray_python -> adept_utils
+Boost -> adept_utils
+}

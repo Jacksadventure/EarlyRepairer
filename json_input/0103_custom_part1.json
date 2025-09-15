@@ -1,0 +1,11 @@
+{
+  "id": 103,
+  "name": "sample_103",
+  "value": "test_value_103",
+  "active": true,
+  "tags": [
+    "json",
+    "test",
+    "small"
+  ]
+}

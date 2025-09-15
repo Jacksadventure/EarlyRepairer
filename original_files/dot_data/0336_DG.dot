@@ -1,6 +1,6 @@
-/*** Dependency Graph (DG) ***/
 
-//Visual Graph on GraphViz: http://graphs.grevian.org/graph
+
+
 
 digraph {
 S1->S0;

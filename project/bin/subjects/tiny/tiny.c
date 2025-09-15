@@ -336,7 +336,20 @@ int main(int argc, char** argv)
   /*char buffer[1024];
   fgets(buffer, 1024, stdin);*/
   if (argc > 1) {
+    // Try to open as a file, if fails, try as a file descriptor
     v = fopen(argv[1], "r");
+    if (!v) {
+      if (strncmp(argv[1], "/dev/fd/", 8) == 0) {
+        int fd = atoi(argv[1] + 8);
+        if (fd > 0) {
+          v = fdopen(fd, "r");
+        }
+      }
+    }
+    if (!v) {
+      fprintf(stderr, "Failed to open input file: %s\n", argv[1]);
+      exit(2);
+    }
   } else {
     v = stdin;
   }

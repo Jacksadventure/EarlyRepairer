@@ -1,62 +1,36 @@
 {
   "gpt_result": {
-    "nl_utterance": "Show me the trend of DJIA values over time between January 1, 1914, and October 1, 1929, on a line chart.",
     "encoded_fields": [
       {
-        "field": "DATE",
-        "type": "temporal",
-        "nl_ref_type": "explicit",
-        "nl_ref_phrase": "over time"
       },
       {
-        "field": "DJIA",
-        "type": "quantitative",
-        "nl_ref_type": "explicit",
-        "nl_ref_phrase": "DJIA values"
       }
     ],
     "constraints": [
       {
-        "c_type": "task",
-        "c_name": "trend",
         "c_list": [
           {
             "mark": [
-              "bar",
-              "line",
-              "area"
             ],
             "encoding": {
               "x": {
-                "type": "temporal"
               }
             }
           }
         ],
-        "nl_ref_type": "explicit",
         "nl_ref_phrase": "trend"
       },
       {
-        "c_type": "transform",
-        "c_name": "filter",
         "c_list": [
           {
-            "field": "DATE",
             "range": [
               {
-                "year": 1914,
-                "month": 1,
-                "day": 1
               },
               {
-                "year": 1929,
-                "month": 10,
-                "day": 1
               }
             ]
           }
         ],
-        "nl_ref_type": "by_value",
         "nl_ref_phrase": "between January 1, 1914, and October 1, 1929"
       }
     ]

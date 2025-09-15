@@ -1,0 +1,24 @@
+digraph zirgen {
+    subgraph cluster_user_input {
+        subgraph cluster_prog_an_circuits {
+            subgraph cluster_accel {
+            }
+        }
+        subgraph cluster_edsl {
+        }
+        subgraph cluster_dsl {
+        }
+    }
+    subgraph cluster_ir {
+        subgraph cluster_ir_variants {
+            subgraph cluster_circuit_ir {
+            }
+        }
+        subgraph cluster_transforms {
+        }
+    }
+    subgraph cluster_codegen {
+        subgraph cluster_codegen_v2 {
+        }
+    }
+}
