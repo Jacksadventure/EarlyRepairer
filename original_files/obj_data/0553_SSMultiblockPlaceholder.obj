@@ -2,12 +2,3 @@
 mtllib SSMultiblockPlaceholder.mtl
 
 
-v 0.0000 0.0000 0.0000
-
-vn 0.0000 0.0000 -0.0000
-
-vt 0.6667 0.6681 0.0005
-
-g noop
-usemtl Transparent
-f 1/1/1 1/1/1 1/1/1

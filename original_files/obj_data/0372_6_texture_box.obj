@@ -1,25 +1,3 @@
 mtllib 6_texture_box.mtl
 g Box01
 v -40 -40 0
-v 40 -40 0
-v -40 40 0
-v 40 40 0
-v -40 -40 80
-v 40 -40 80
-v -40 40 80
-v 40 40 80
-v 120 120 120
-v 130 140 145
-v 222 -120 204
-vt 1 0
-vt 0 0
-vt 1 1
-vt 0 1
-vn 0 0 -1
-vn 0 0 1
-vn 0 -1 0
-vn 1 0 0
-vn 0 1 0
-vn -1 0 0
-usemtl Metal_Dark_Gold
-f  1/1/1 3/2/1 4/2/1

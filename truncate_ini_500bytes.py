@@ -1,7 +1,7 @@
 import os
 
 ini_dir = "original_files/ini_data"
-max_bytes = 500
+max_bytes = 50
 
 for filename in os.listdir(ini_dir):
     if filename.endswith(".ini"):

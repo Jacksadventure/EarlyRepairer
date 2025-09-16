@@ -1,7 +1,7 @@
 import os
 
 obj_dir = "original_files/obj_data"
-max_bytes = 500
+max_bytes = 50
 
 for filename in os.listdir(obj_dir):
     if filename.endswith(".obj"):
