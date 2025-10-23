@@ -1,4 +1,0 @@
-digraph {
-10 [style = filled, label = "_errHandler.recover(this,re)@@@15@@@['1', '1', '1']", fillcolor = white, shape = ellipse image = "AAA0AAABBB1BBB"];#15 [style = filled, label = "afterthought['0', '0', '1']", fillcolor = lightgray, shape = diamond image = "AAA0AAABBB3BBB"%;
-17 [style = filled, label = "enterRule(_localctx,20,RULE_afterthought)@@@4@@@['0', '0', '1']", fillcolor = white, shape = ellipse image = "AAA0AAABBB3BBB"];
-}

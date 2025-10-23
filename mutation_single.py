@@ -8,7 +8,9 @@ into an invalid one (validator exit-code ≠ 0).
 
 Mutation strategy
 -----------------
-Randomly *replace*, *delete*, or *insert* a **single ASCII byte** chosen from
+For each chosen position, try all applicable single-byte operations:
+replace, delete, and insert (when pos == len(data), only insert).
+Inserted/replaced bytes are chosen from
 PRINTABLE_ASCII.
 
 Guarantees
@@ -82,6 +84,32 @@ def mutate_data(data: bytearray, pos: int) -> bytearray:
     return buf
 
 
+def mutate_data_with_op(data: bytearray, pos: int, op: str) -> bytearray:
+    """
+    Deterministic single operation variant of mutate_data.
+    Allowed ops: 'replace', 'delete', 'insert'.
+    """
+    buf = bytearray(data)
+    if op == "replace":
+        if pos >= len(buf):
+            raise ValueError("replace op requires pos < len(data)")
+        orig = buf[pos]
+        new_ch = random.choice(PRINTABLE_ASCII)
+        while ord(new_ch) == orig:
+            new_ch = random.choice(PRINTABLE_ASCII)
+        buf[pos] = ord(new_ch)
+    elif op == "delete":
+        if pos >= len(buf):
+            raise ValueError("delete op requires pos < len(data)")
+        del buf[pos]
+    elif op == "insert":
+        new_ch = random.choice(PRINTABLE_ASCII)
+        buf.insert(pos, ord(new_ch))
+    else:
+        raise ValueError(f"unknown op: {op}")
+    return buf
+
+
 # ────────────────────── SQLite persistence ───────────────────────────────
 def ensure_table(conn: sqlite3.Connection) -> None:
     conn.execute(
@@ -113,7 +141,8 @@ def store_pair(conn: sqlite3.Connection,
 def process_file(file_path: Path,
                  validator: str,
                  conn: sqlite3.Connection,
-                 max_attempts: int) -> None:
+                 max_attempts: int,
+                 max_per_file: int) -> None:
     raw = file_path.read_bytes()
 
     # Skip non-ASCII originals (keep the validator call cheap)
@@ -129,16 +158,14 @@ def process_file(file_path: Path,
         return
 
     print(f"[info] processing {file_path}")
-    found: Set[int] = set()
+    found_count = 0
+    attempted: Set[tuple[int, str]] = set()
     attempts = 0
 
-    while len(found) < 10 and attempts < max_attempts:
+    while found_count < max_per_file and attempts < max_attempts:
         attempts += 1
         pos = random.randrange(len(raw) + 1)   # allow “insert at end”
 
-        # already tried this position in this file?
-        if pos in found:
-            continue
 
         # If pos is inside the buffer, ensure it’s a plain ASCII byte
         if pos < len(raw) and raw[pos] >= 0x80:
@@ -148,32 +175,49 @@ def process_file(file_path: Path,
         if pos < len(raw) and raw[pos] == ord('"'):
             continue
 
-        mutated = mutate_data(bytearray(raw), pos)
+        # Try all ops at this position; count each (pos, op) invalid as a separate case.
+        allowed_ops = ["insert"] if pos >= len(raw) else ["replace", "delete", "insert"]
 
-        # write to a temp file beside the original
-        tmp = file_path.with_suffix(".tmp_mutate")
-        tmp.write_bytes(mutated)
+        # If we've already attempted all ops for this position, skip it.
+        if all((pos, op) in attempted for op in allowed_ops):
+            continue
 
-        try:
-            if not run_validator(validator, tmp):
-                store_pair(conn,
-                           str(file_path),
-                           pos,
-                           raw.decode(errors="ignore"),
-                           mutated.decode(errors="ignore"))
-                found.add(pos)
-                print(f"  [✓] mutation #{len(found)} @ byte {pos}")
-        finally:
-            tmp.unlink(missing_ok=True)
+        for op in allowed_ops:
+            if (pos, op) in attempted:
+                continue
 
-    if len(found) < 10:
-        print(f"  [✗] only {len(found)} of 10 found")
+            mutated = mutate_data_with_op(bytearray(raw), pos, op)
+
+            # write to a temp file beside the original
+            tmp = file_path.with_suffix(".tmp_mutate")
+            tmp.write_bytes(mutated)
+
+            try:
+                if not run_validator(validator, tmp):
+                    store_pair(conn,
+                               str(file_path),
+                               pos,
+                               raw.decode(errors="ignore"),
+                               mutated.decode(errors="ignore"))
+                    found_count += 1
+                    print(f"  [✓] invalid via {op} @ byte {pos} (total={found_count})")
+            finally:
+                tmp.unlink(missing_ok=True)
+
+            attempted.add((pos, op))
+
+            if found_count >= max_per_file:
+                break
+
+    if found_count < max_per_file:
+        print(f"  [✗] only {found_count} of {max_per_file} found")
 
 
 def traverse_and_mutate(folder: Path,
                         validator: str,
                         db_path: Path,
                         max_attempts: int,
+                        max_per_file: int,
                         seed: int | None = None) -> None:
     if seed is not None:
         random.seed(seed)
@@ -183,7 +227,7 @@ def traverse_and_mutate(folder: Path,
         for path in folder.rglob("*"):
             if path.is_file():
                 try:
-                    process_file(path, validator, conn, max_attempts)
+                    process_file(path, validator, conn, max_attempts, max_per_file)
                 except Exception as exc:
                     print(f"[err] {path}: {exc}", file=sys.stderr)
 
@@ -196,6 +240,8 @@ def main() -> None:
     parser.add_argument("--database", required=True, help="SQLite output file")
     parser.add_argument("--max-attempts", type=int, default=10_00,
                         help="max mutation attempts per file (default: 1000)")
+    parser.add_argument("--max-per-file", type=int, default=10,
+                        help="max invalid mutations to store per original file (default: 10)")
     parser.add_argument("--seed", type=int, help="optional RNG seed for reproducibility")
     args = parser.parse_args()
 
@@ -203,6 +249,7 @@ def main() -> None:
                         args.validator,
                         Path(args.database).resolve(),
                         args.max_attempts,
+                        args.max_per_file,
                         args.seed)
     print("[done] all files processed")
 

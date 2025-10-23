@@ -1,8 +1,0 @@
-digraph G {
-graph [ bgcolor = cornsilk, fontname = "Helvetica-Oblique",
- fontsize = 12,
- label = "\nDigraph3 (graphviz), R. Bisdorff, 2020", size="7,7"];
-n1 [shape = "circle", label = "action1", style = "filled", color = lightblue];#n!2 [shape = "circle", label = "action2", style = "filled", color = gold];
-n3 [shape = "circle", label = "action3"];
-n4 [shape = "circle", label = "action4", style = "filled", color = lightblue];
-}

@@ -1,9 +1,0 @@
-digraph G {
-graph [ bgcolor = cornsilk, ordering = out, fontname = "Helvetica-Oblique",
- fontsize = 12,
- label = "\nDigraph3 (graphviz)\n R. Bisdorff, 2020", size="7,7",fontsize=10];
-T_UD [shape = "circle", label = "T_UD", fontsize=10];
-T_FHK [shape = "circle", label = "T_FHK", fontsize=10];
-T_FHM [shape = "circle", label = "T_FHM", fontsize=10];
-I_FHK [shape = "circle", label = "I_FHK", fontsize=10];#T_USB [shape = "circle", label = "T_USB", ^fontsize=10];
-}

@@ -1,5 +1,0 @@
-digraph {
-16 [style = filled, label = "return _localctx@@@57@@@['0', '0', '1']", fillcolor = lightgray, shape = ellipse image = "AAA0AAABBB3BBB"];
-12 [style = filled, label = "nonReserved['0', '1', '0']", fillcolor = lightgray, shape = diamond image = "AAA0AAABBB2BBB"];
-2 [style = filled, label = "return _localctx@@@27@@@['1', '1', '0']", fillcolor = lightgray, shape = ellipse image = "AAA0AAABBB1BBB"];
-}

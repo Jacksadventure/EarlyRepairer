@@ -1,0 +1,12 @@
+
+
+#include "doc/graphs/header.dot"
+
+digraph {
+
+
+    "foo";
+    "foo" -> "foo" [label="(1)"];
+}
+
+

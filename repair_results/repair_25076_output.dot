@@ -1,5 +1,0 @@
-
-
-digraph {
-  node1 [label = "nice node", shape = box, fontname = "Arial", fontcolor = "#AA0000"];
-}

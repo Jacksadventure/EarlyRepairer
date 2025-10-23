@@ -1,9 +1,0 @@
-{
-    "Overlay": {
-        "Clicks": "%s klikkausta",
-        "ClicksFromXLinks": "%1$s klikkaukset yhdestä %2$s:n linkeistä",
-        "Domain": "Verkkotunnus",
-        "ErrorNotLoading": "Sivun leijukeistuntoa ei voitu vielä käynnistää.",
-        "RedirectUrlErrorUser": "Pyydä ylläpitää lisäämään domain ylimääräisenä verkkosivuna."
-    }
-}

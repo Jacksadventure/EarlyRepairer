@@ -1,6 +1,0 @@
-{
-  "type": "service_account",
-  "project_id": "luckeereporting",
-  "private_key_id": "8d46db762e84c4929dcfd07e2f6ca137e3208607",
-  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/luckeedata2%40luckeereporting.iam.gserviceaccount.com"
-}

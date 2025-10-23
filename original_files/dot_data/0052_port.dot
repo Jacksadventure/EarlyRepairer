@@ -1,5 +1,0 @@
-
-
-digraph {
-  node1 : e -> node2 : s;
-}

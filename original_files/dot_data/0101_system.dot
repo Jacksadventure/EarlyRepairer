@@ -1,0 +1,4 @@
+digraph system {
+2[label=2,style=filled]
+1[label=1]
+}

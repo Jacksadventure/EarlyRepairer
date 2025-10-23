@@ -1,5 +1,0 @@
-
-digraph {
-  node [shape="doublecircle" color="#006699" style="filled"
-        fillcolor="#33CCFF" fixedsize="True" width="1.5" height="1.5"]#;^
-}

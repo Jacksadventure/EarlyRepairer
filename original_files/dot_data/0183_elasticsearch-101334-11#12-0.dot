@@ -1,5 +1,0 @@
-digraph {
-20 [style = filled, label = "tableIdentifier['0', '1', '0']", fillcolor = lightgray, shape = diamond image = "AAA0AAABBB2BBB"];
-27 [style = filled, label = "RecognitionException re@@@19@@@['0', '0', '1']", fillcolor = white, shape = diamond image = "AAA0AAABBB3BBB"];
-28 [style = filled, label = "nonReserved['0', '0', '1']", fillcolor = lightgray, shape = diamond image = "AAA0AAABBB3BBB"];
-}

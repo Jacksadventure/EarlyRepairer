@@ -34,8 +34,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 # ───────────────────────────────── CONFIG ────────────────────────────────── #
-DATABASES       = ["double.db"]
-DEFAULT_TIMEOUT = 240.0  # seconds for NULL repair_time fallback
+DATABASES       = ["single.db", "double.db", "triple.db"]  # list of DB files to analyse
+DEFAULT_TIMEOUT = 600  # seconds for NULL repair_time fallback
 # ─────────────────────────────────────────────────────────────────────────── #
 
 # Helpers ─────────────────────────────────────────────────────────────────── #

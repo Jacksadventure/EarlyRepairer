@@ -1,5 +1,0 @@
-digraph {
-1 [style = filled, label = "NonReservedContext _localctx = new NonReservedContext(_ctx,getState())@@@3@@@['1', '1', '0']", fillcolor = white, shape = ellipse image = "AAA0AAABBB1BBB"];
-11 [style = filled, label = "nonReserved['1', '0', '0']", fillcolor = lightgray, shape = diamond image = "AAA0AAABBB1BBB"];
-7 [style = filled, label = "enterOuterAlt(_localctx,1)@@@7@@@['1', '1', '0']", fillcolor = white, shape = ellipse image = "AAA0AAABBB1BBB"];
-}

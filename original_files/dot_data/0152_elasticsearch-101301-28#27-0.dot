@@ -1,5 +1,0 @@
-digraph {
-29 [style = filled, label = "_localctx.exception = re@@@13@@@['0', '0', '1']", fillcolor = white, shape = ellipse image = "AAA0AAABBB3BBB"];
-11 [style = filled, label = "groupingExpressions['1', '0', '0']", fillcolor = lightgray, shape = diamond image = "AAA0AAABBB1BBB"];
-28 [style = filled, label = "enterOuterAlt(_localctx,1)@@@6@@@['0', '0', '1']", fillcolor = white, shape = ellipse image = "AAA0AAABBB3BBB"];
-}

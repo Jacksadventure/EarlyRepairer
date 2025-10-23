@@ -1,0 +1,5 @@
+digraph "simple" {
+  init -> run [label="change"]
+  run -> run [label="change"]
+  run -> stop
+}

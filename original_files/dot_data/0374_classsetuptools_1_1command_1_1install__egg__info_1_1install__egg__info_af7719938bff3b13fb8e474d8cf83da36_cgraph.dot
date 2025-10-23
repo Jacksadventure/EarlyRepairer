@@ -1,9 +1,0 @@
-digraph "setuptools.command.install_egg_info.install_egg_info.copytree"
-{
- 
-  bgcolor="transparent";
-  edge [fontname=Helvetica,fontsize=10,labelfontname=Helvetica,labelfontsize=10];
-  node [fontname=Helvetica,fontsize=10,shape=box,height=0.2,width=0.4];
-  rankdir="LR";
-  Node1 [id="Node000001",label="setuptools.command.install\l_egg_info.install_egg_info.copytree",height=0.2,width=0.4,color="gray40", fillcolor="grey60", style="filled", fontcolor="black",tooltip=" "];
-}

@@ -1,9 +1,0 @@
-
-digraph db_blog {
-  node [shape=plain margin=0];
-  users [label=<<table cellspacing="0" cellpadding="5" cellborder="0" border="0">
-    <tr><td colspan="2" bgcolor="greenyellow"><b>users</b></td></tr>
-    <tr><td align="left"><b><u>id</u></b></td><td align="left">int(10), not null, pk</td></tr>
-    <tr><td align="left"><b>name</b></td><td align="left">varchar(255)</td></tr>
-  </table>>]
-}

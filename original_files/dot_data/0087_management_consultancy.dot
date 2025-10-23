@@ -1,0 +1,3 @@
+digraph {
+  ChooseLot -> ChooseServices -> ChooseExpenses -> ChooseRegions -> Suppliers;
+}

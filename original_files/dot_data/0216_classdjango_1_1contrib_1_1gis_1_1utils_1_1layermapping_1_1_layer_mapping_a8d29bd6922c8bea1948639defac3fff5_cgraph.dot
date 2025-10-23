@@ -1,8 +1,0 @@
-digraph "django.contrib.gis.utils.layermapping.LayerMapping.verify_ogr_field"
-{
- 
-  bgcolor="transparent";
-  edge [fontname=Helvetica,fontsize=10,labelfontname=Helvetica,labelfontsize=10];
-  node [fontname=Helvetica,fontsize=10,shape=box,height=0.2,width=0.4];
-  rankdir="LR";
-}

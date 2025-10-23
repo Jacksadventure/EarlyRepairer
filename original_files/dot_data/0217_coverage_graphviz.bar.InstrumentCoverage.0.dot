@@ -1,5 +1,0 @@
-digraph Cov_0_4 {
-    graph [fontname="Courier, monospace"];
-    node [fontname="Courier, monospace"];
-    edge [fontname="Courier, monospace"];
-}

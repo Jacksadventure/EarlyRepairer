@@ -1,5 +1,0 @@
-
-digraph G {
-    d2tdocpreamble = "\usetikzlibrary{calc}\
--| ($(\tikztostart)!0.5!(\tikztotarget)$) |- (\tikztotarget) \tikztonodes}]";
-}

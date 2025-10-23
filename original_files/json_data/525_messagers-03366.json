@@ -1,4 +1,0 @@
-[
-  {"role": "system", "content": "You are a helpful assistant who is good at identifying named entities and their relations."},
-  {"role": "assistant", "content": "Here is the valid entities presented as a Markdown table:\n\n| Entity    | Entity Type |\n|-----------|-------------|\n| Colorado  | location    |\n| Los Angeles | location   |"}
-]

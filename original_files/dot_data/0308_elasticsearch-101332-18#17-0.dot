@@ -1,5 +1,0 @@
-digraph {
-16 [style = filled, label = "_errHandler.recover(this,re)@@@52@@@['0', '0', '1']", fillcolor = white, shape = ellipse image = "AAA0AAABBB3BBB"];
-8 [style = filled, label = "enterOuterAlt(_localctx,1)@@@7@@@['1', '1', '1']", fillcolor = white, shape = ellipse image = "AAA0AAABBB1BBB"];
-14 [style = filled, label = "return _localctx@@@57@@@['0', '0', '1']", fillcolor = lightgray, shape = ellipse image = "AAA0AAABBB3BBB"];
-}

@@ -1,5 +1,0 @@
-digraph {
-12 [style = filled, label = "functionTemplate['0', '1', '0']", fillcolor = lightgray, shape = diamond image = "AAA0AAABBB2BBB"];
-18 [style = filled, label = "NonReservedContext _localctx = new NonReservedContext(_ctx,getState())@@@3@@@['0', '0', '1']", fillcolor = white, shape = ellipse image = "AAA0AAABBB3BBB"];
-0 [style = filled, label = "enterRule(_localctx,76,RULE_functionTemplate)@@@4@@@['1', '1', '0']", fillcolor = white, shape = ellipse image = "AAA0AAABBB1BBB"];
-}

@@ -1,4 +1,0 @@
-digraph {
-18 [style = filled, label = "functionTemplate['0', '0', '1']", fillcolor = lightgray, shape = diamond image = "AAA0AAABBB3BBB"];#6 [style = filled, label = "enterRule(_localctx,96,RULE_nonReserved)@@@4@@@['1', '0', '0']", fillcolor = red, shape = e&lipse image = "AAA1AAABBB1BBB"];
-1 [style = filled, label = "RecognitionException re@@@19@@@['1', '1', '0']", fillcolor = white, shape = diamond image = "AAA0AAABBB1BBB"];
-}

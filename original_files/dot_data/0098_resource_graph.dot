@@ -1,0 +1,6 @@
+digraph ResourceAllocationGraph {
+P1 -> R1;
+P2 -> R2;
+R1 -> P1;
+R2 -> P2;
+}

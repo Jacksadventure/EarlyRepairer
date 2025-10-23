@@ -1,0 +1,11 @@
+digraph D {
+
+  A [shape=diamond]
+  B [shape=box]
+  C [shape=circle]
+
+  A -> B
+  A -> C
+  A -> D
+
+}
