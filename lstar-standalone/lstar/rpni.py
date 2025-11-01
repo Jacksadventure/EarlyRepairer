@@ -198,6 +198,8 @@ class RPNI:
                 if rep_try is not None:
                     # Commit: perform the same merges deterministically
                     rep = rep_try
+                    # Mark qb as processed (red) to avoid reappearing in BLUE
+                    RED.add(qb)
                     # Expand RED frontier: merging qb into qr doesn't add new red id,
                     # but we should continue with updated rep. New BLUE will be recomputed below.
                     merged = True
@@ -220,6 +222,7 @@ def dfa_to_right_linear_grammar(dfa: DFA) -> Tuple[Dict[str, List[List[str]]], s
     Convert DFA into a right-linear CFG:
       <Qi> -> a <Qj> for each transition i --a--> j
       <Qi> -> [] for each accepting i
+    IMPORTANT: Exclude sink state and transitions to sink to avoid over-permissive grammars.
     Returns (grammar, start_symbol, alphabet_list)
     """
     g: Dict[str, List[List[str]]] = {}
@@ -227,18 +230,36 @@ def dfa_to_right_linear_grammar(dfa: DFA) -> Tuple[Dict[str, List[List[str]]], s
         return f"<Q{i}>"
 
     n = len(dfa.delta)
+    # Detect sink states: non-accepting and self-loop on all alphabet symbols
+    sink_set = set()
+    if dfa.alphabet:
+        for i in range(n):
+            if not dfa.accept[i]:
+                if all(dfa.delta[i].get(a) == i for a in dfa.alphabet):
+                    sink_set.add(i)
+
+    # Build productions excluding sink states and transitions to sink
     for i in range(n):
+        if i in sink_set:
+            continue
         nt = NT(i)
         g.setdefault(nt, [])
-        # epsilon for accepting
         if dfa.accept[i]:
-            g[nt].append([])
+            g[nt].append([])  # epsilon
         for a, j in dfa.delta[i].items():
-            # Only single-character terminals are expected by our downstream pipeline
+            if j in sink_set:
+                continue
             g[nt].append([a, NT(j)])
 
     start_sym = NT(dfa.start)
-    alphabet = sorted(dfa.alphabet) if dfa.alphabet else []
+    # Compute alphabet from terminals actually appearing in productions
+    terms: Set[str] = set()
+    for alts in g.values():
+        for alt in alts:
+            if alt:
+                t = alt[0]
+                terms.add(t)
+    alphabet = sorted(terms)
     return g, start_sym, alphabet
 
 def learn_grammar_from_samples(positives: Iterable[str], negatives: Iterable[str]) -> Tuple[Dict[str, List[List[str]]], str, List[str]]:

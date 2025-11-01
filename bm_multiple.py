@@ -355,6 +355,10 @@ def repair_and_update_entry(cursor, conn, row):
 
         # Use our Python repairer with validators/regex oracle (handled inside repairer)
         attempts = os.environ.get("LSTAR_EC_MAX_ATTEMPTS", "0")
+        # Prefer validators/regex validator; allow override via LSTAR_ORACLE_VALIDATOR
+        oracle_override = os.environ.get("LSTAR_ORACLE_VALIDATOR")
+        oracle_wrapper = os.path.join("validators", "regex", f"validate_{base_format}")
+        oracle_cmd = oracle_override if oracle_override else (oracle_wrapper if os.path.exists(oracle_wrapper) else None)
         cmd = [
             "python3", "lstar-standalone/lstar/repairer_lstar_ec.py",
             "--positives", pos_file,
@@ -366,6 +370,21 @@ def repair_and_update_entry(cursor, conn, row):
             "--output-file", output_file,
             "--max-attempts", attempts
         ]
+        if oracle_cmd:
+            cmd += ["--oracle-validator", oracle_cmd]
+        # Equivalence speed knobs via env (optional; to reduce oracle query cost)
+        eq_flags = []
+        if os.environ.get("LSTAR_EQ_MAX_LENGTH"):
+            eq_flags += ["--eq-max-length", os.environ["LSTAR_EQ_MAX_LENGTH"]]
+        if os.environ.get("LSTAR_EQ_SAMPLES_PER_LENGTH"):
+            eq_flags += ["--eq-samples-per-length", os.environ["LSTAR_EQ_SAMPLES_PER_LENGTH"]]
+        if os.environ.get("LSTAR_EQ_DISABLE_SAMPLING", "").lower() in ("1", "true", "yes"):
+            eq_flags += ["--eq-disable-sampling"]
+        if os.environ.get("LSTAR_EQ_SKIP_NEGATIVES", "").lower() in ("1", "true", "yes"):
+            eq_flags += ["--eq-skip-negatives"]
+        if os.environ.get("LSTAR_EQ_MAX_ORACLE"):
+            eq_flags += ["--eq-max-oracle", os.environ["LSTAR_EQ_MAX_ORACLE"]]
+        cmd += eq_flags
     else:
         # Example usage of your erepair.jar approach
         cmd = [
@@ -589,6 +608,10 @@ def main():
                             nf.write(((r[0] or "") + "\n"))
                     connc.close()
                     category = REGEX_DIR_TO_CATEGORY.get(fmt, fmt)
+                    # Prefer validators/regex validator for precompute; allow override via LSTAR_ORACLE_VALIDATOR
+                    oracle_override = os.environ.get("LSTAR_ORACLE_VALIDATOR")
+                    oracle_wrapper = os.path.join("validators", "regex", f"validate_{fmt}")
+                    oracle_cmd = oracle_override if oracle_override else (oracle_wrapper if os.path.exists(oracle_wrapper) else None)
                     cmd = [
                         "python3", "lstar-standalone/lstar/repairer_lstar_ec.py",
                         "--positives", pos_file,
@@ -597,6 +620,21 @@ def main():
                         "--grammar-cache", cache_path,
                         "--init-cache"
                     ]
+                    if oracle_cmd:
+                        cmd += ["--oracle-validator", oracle_cmd]
+                    # Equivalence speed knobs via env for precompute as well
+                    eq_flags = []
+                    if os.environ.get("LSTAR_EQ_MAX_LENGTH"):
+                        eq_flags += ["--eq-max-length", os.environ["LSTAR_EQ_MAX_LENGTH"]]
+                    if os.environ.get("LSTAR_EQ_SAMPLES_PER_LENGTH"):
+                        eq_flags += ["--eq-samples-per-length", os.environ["LSTAR_EQ_SAMPLES_PER_LENGTH"]]
+                    if os.environ.get("LSTAR_EQ_DISABLE_SAMPLING", "").lower() in ("1", "true", "yes"):
+                        eq_flags += ["--eq-disable-sampling"]
+                    if os.environ.get("LSTAR_EQ_SKIP_NEGATIVES", "").lower() in ("1", "true", "yes"):
+                        eq_flags += ["--eq-skip-negatives"]
+                    if os.environ.get("LSTAR_EQ_MAX_ORACLE"):
+                        eq_flags += ["--eq-max-oracle", os.environ["LSTAR_EQ_MAX_ORACLE"]]
+                    cmd += eq_flags
                     print(f"[DEBUG] Precompute cache for {format_key}: {' '.join(cmd)} (K={pre_k})")
                     pre_tmo = int(os.environ.get("LSTAR_PRECOMPUTE_TIMEOUT", "600"))
                     pre_pen = os.environ.get("LSTAR_PRECOMP_MAX_PENALTY", "2")

@@ -1,10 +1,8 @@
 """
-L* algorithm package: observation table, teacher, and algorithm loop.
+Minimal lstar package exports for the new architecture.
+Only expose ObservationTable used by the L* learner in repairer_lstar_ec.py.
 """
 
 from .observation_table import ObservationTable
-from .teacher import Teacher, Oracle
-from .sample_teacher import SampleTeacher
-from .algorithm import l_star, learn_from_regex
 
-__all__ = ["ObservationTable", "Teacher", "Oracle", "SampleTeacher", "l_star", "learn_from_regex"]
+__all__ = ["ObservationTable"]

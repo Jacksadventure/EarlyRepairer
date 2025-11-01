@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Repairer: RPNI DFA inference + Error-Correcting Earley
+Repairer: L* (validator-backed) or RPNI + Error-Correcting Earley
 
 Pipeline:
-1) Learn a DFA via RPNI from positive/negative samples, then convert to a right-linear CFG.
+1) Learn a DFA via L* (validator-backed membership; seeds table with positives first) or via RPNI from positive/negative samples, then convert to a right-linear CFG.
 2) Build a covering grammar and use error-correcting Earley to repair broken inputs.
 3) Validate repaired outputs with an oracle (e.g., python3 match.py Date).
 4) If oracle fails, incrementally add the failing negative example to Teacher.negatives and relearn (<= max_attempts).
@@ -19,7 +19,7 @@ Usage example:
 Notes:
 - Does NOT depend on simplefuzzer.
 - Requires earleyparser (vendored wheel in lstar-standalone/py) and sympy (installed).
-- No membership oracle is used; RPNI learns from provided positive/negative samples.
+- Default learner is L* with validator-backed oracle constructing the observation table (seeded with positive examples first); use --learner rpni to switch to passive RPNI.
 """
 
 import os
@@ -30,6 +30,7 @@ import subprocess
 import tempfile
 import traceback
 import json
+import shlex
 import time
 from typing import List, Set, Tuple, Dict, Any, Optional
 
@@ -49,6 +50,11 @@ if os.path.isdir(PY_DIR):
 
 # RPNI import (passive DFA learning from samples)
 from lstar.rpni import learn_grammar_from_samples as rpni_learn_grammar
+from lstar.observation_table import ObservationTable
+import earleyparser
+import cfgrandomsample
+import simplefuzzer as fuzzer
+import random
 
 # Import error-correcting Earley runtime (no side effects)
 try:
@@ -187,6 +193,174 @@ def learn_grammar(positives: Set[str], negatives: Set[str], unknown_policy: str 
     return g, start_sym, alphabet
 
 
+class ValidatorOracle:
+    """
+    Oracle that answers membership queries using external validators and
+    provides a practical equivalence check combining:
+      - all provided positives must be accepted by the grammar
+      - provided negatives must be rejected by the grammar
+      - random samples generated from the learned grammar must be accepted by the validator
+    """
+    def __init__(
+        self,
+        category: str,
+        positives: Set[str],
+        negatives: Set[str],
+        validator_cmd: Optional[List[str]] = None,
+        eq_max_length: int = 10,
+        eq_samples_per_length: int = 50,
+        eq_disable_sampling: bool = False,
+        check_negatives: bool = True,
+        eq_budget: Optional[int] = None,
+    ):
+        self.category = category
+        self.positives = set(positives)
+        self.negatives = set(negatives)
+        self.validator_cmd = validator_cmd
+        # Equivalence parameters (allow faster/approximate checks)
+        self.max_length = int(max(0, eq_max_length))
+        self.sample_n = int(max(0, eq_samples_per_length))
+        self.eq_disable_sampling = bool(eq_disable_sampling)
+        self.check_negatives = bool(check_negatives)
+        self.eq_budget = eq_budget if (eq_budget is None or eq_budget >= 0) else None
+        self.eq_calls = 0  # counts validate_with_match calls in sampling
+        # Membership memoization to reduce external oracle runs
+        self.mem_cache: Dict[str, bool] = {}
+
+    def is_member(self, q: str) -> int:
+        if q in self.mem_cache:
+            ok = self.mem_cache[q]
+        else:
+            ok = validate_with_match(self.category, q, self.validator_cmd)
+            self.mem_cache[q] = ok
+        try:
+            prev = q if len(q) <= 200 else (q[:200] + "...(truncated)")
+        except Exception:
+            prev = "<unprintable>"
+        print(f"[DEBUG] Membership verdict: {'ACCEPT' if ok else 'REJECT'} for {repr(prev)}")
+        return 1 if ok else 0
+
+    def is_equivalent(self, grammar: Dict[str, List[List[str]]], start: str) -> Tuple[bool, Optional[str]]:
+        # 1) Positives must be accepted by learned grammar
+        parser = earleyparser.EarleyParser(grammar)
+        for p in self.positives:
+            try:
+                list(parser.recognize_on(p, start))
+            except Exception:
+                return False, p  # positive not accepted by grammar
+
+        # 2) Negatives must be rejected by learned grammar (optional)
+        if self.check_negatives:
+            for n in self.negatives:
+                try:
+                    list(parser.recognize_on(n, start))
+                    return False, n  # negative wrongly accepted by grammar
+                except Exception:
+                    pass
+
+        # 3) Optional: random sampling against external validator (no false positives)
+        if self.eq_disable_sampling or self.max_length == 0 or self.sample_n == 0:
+            print("[DEBUG] Equivalence sampling disabled or parameters set to 0; accepting current hypothesis for speed.")
+            return True, None
+
+        try:
+            sampler = cfgrandomsample.RandomSampleCFG(grammar)
+        except Exception:
+            return True, None  # if sampling fails, accept for practicality
+
+        for l in range(1, max(1, self.max_length) + 1):
+            # Budget check per equivalence run
+            if self.eq_budget is not None and self.eq_calls >= self.eq_budget:
+                print(f"[DEBUG] Equivalence sampling budget exhausted ({self.eq_calls}/{self.eq_budget}); accepting hypothesis.")
+                return True, None
+            try:
+                key_node = sampler.key_get_def(start, l)
+                cnt = key_node.count
+            except Exception:
+                continue
+            if not cnt:
+                continue
+            tries = min(self.sample_n, cnt)
+            for _ in range(tries):
+                if self.eq_budget is not None and self.eq_calls >= self.eq_budget:
+                    print(f"[DEBUG] Equivalence sampling budget exhausted ({self.eq_calls}/{self.eq_budget}); accepting hypothesis.")
+                    return True, None
+                try:
+                    at = random.randint(0, max(0, cnt - 1))
+                    tree = sampler.key_get_string_at(key_node, at)
+                    s = fuzzer.tree_to_string(tree)
+                    self.eq_calls += 1
+                    if not validate_with_match(self.category, s, self.validator_cmd):
+                        return False, s
+                except Exception:
+                    # ignore sampling issues at this length
+                    pass
+        return True, None
+
+
+def lstar_learn_with_oracle(
+    positives: Set[str],
+    negatives: Set[str],
+    category: str,
+    validator_cmd: Optional[List[str]] = None,
+    eq_max_length: int = 10,
+    eq_samples_per_length: int = 50,
+    eq_disable_sampling: bool = False,
+    check_negatives: bool = True,
+    eq_budget: Optional[int] = None,
+) -> Tuple[Grammar, str, List[str]]:
+    """
+    Learn a right-linear CFG using L* where:
+      - Observation table membership queries are answered by external validators
+      - The table is seeded with positive examples first
+      - Equivalence uses a combination of finite checks and sampled conformance
+    """
+    t0 = time.time()
+    alphabet = derive_alphabet_from_examples(positives, negatives)
+    oracle = ValidatorOracle(
+        category,
+        positives,
+        negatives,
+        validator_cmd=validator_cmd,
+        eq_max_length=eq_max_length,
+        eq_samples_per_length=eq_samples_per_length,
+        eq_disable_sampling=eq_disable_sampling,
+        check_negatives=check_negatives,
+        eq_budget=eq_budget,
+    )
+    T = ObservationTable(alphabet)
+    # Initialize and seed with positives first
+    T.init_table(oracle)
+    # Add positive prefixes as candidate access strings to bias early learning
+    for p in sorted(positives, key=len):
+        if p not in T.P:
+            T.add_prefix(p, oracle)
+
+    # L* main loop (closed/consistent) with equivalence via oracle
+    while True:
+        while True:
+            is_closed, unknown_P = T.closed()
+            is_consistent, _, unknown_AS = T.consistent()
+            if is_closed and is_consistent:
+                break
+            if not is_closed:
+                T.add_prefix(unknown_P, oracle)
+            if not is_consistent:
+                T.add_suffix(unknown_AS, oracle)
+        grammar, start = T.grammar()
+        eq, counter = oracle.is_equivalent(grammar, start)
+        if eq or counter is None:
+            t1 = time.time()
+            try:
+                print(f"[PROFILE] lstar_oracle: {t1 - t0:.2f}s, P={len(positives)}, N={len(negatives)}, |A|={len(alphabet)}")
+            except Exception:
+                print(f"[PROFILE] lstar_oracle: {time.time() - t0:.2f}s")
+            return grammar, start, alphabet
+        # Add prefixes of the counterexample string to refine table
+        for i in range(len(counter)):
+            T.add_prefix(counter[: i + 1], oracle)
+
+
 def earley_correct(g: Grammar, start_sym: str, broken: str, symbols: List[str] = None, log: bool = False, penalty: Optional[int] = None, max_penalty: Optional[int] = None) -> str:
     """
     Use the error-correcting Earley parser with a covering grammar to fix 'broken'.
@@ -205,20 +379,99 @@ def earley_correct(g: Grammar, start_sym: str, broken: str, symbols: List[str] =
             max_penalty = int(os.getenv("LSTAR_MAX_PENALTY", "32"))
         except Exception:
             max_penalty = 32
+
+    # Parse timeout (seconds), can be overridden via env LSTAR_PARSE_TIMEOUT
     try:
-        parser.max_penalty = int(max_penalty)
+        parse_timeout = float(os.getenv("LSTAR_PARSE_TIMEOUT", "5.0"))
     except Exception:
-        pass
+        parse_timeout = 5.0
+
+    # Attempts with decreasing penalty budget if we time out
+    attempts: List[int] = []
     try:
-        se = ec.SimpleExtractorEx(parser, broken, covering_start, penalty=penalty, log=log)
-    except Exception as e:
-        # If requested penalty is invalid (no parse with that penalty), fall back to minimum-penalty
-        if penalty is not None and "Invalid penalty" in str(e):
+        mp0 = int(max_penalty)
+        attempts = [mp0, max(1, mp0 // 2), 1]
+        # deduplicate while preserving order
+        _seen_mp = set()
+        attempts = [x for x in attempts if not (x in _seen_mp or _seen_mp.add(x))]
+    except Exception:
+        try:
+            attempts = [int(max_penalty)]
+        except Exception:
+            attempts = [8]
+
+    se = None
+    last_err = None
+    for mp in attempts:
+        try:
+            parser.max_penalty = int(mp)
+        except Exception:
+            pass
+
+        # Timeout guard around parse (uses Unix signals; works on macOS/Linux)
+        try:
+            import signal
+
+            def _timeout_handler(signum, frame):
+                raise TimeoutError("parse timeout")
+
+            old_handler = None
+            try:
+                old_handler = signal.getsignal(signal.SIGALRM)
+                signal.signal(signal.SIGALRM, _timeout_handler)
+            except Exception:
+                old_handler = None
+
+            try:
+                if hasattr(signal, "setitimer"):
+                    signal.setitimer(signal.ITIMER_REAL, max(0.0, parse_timeout))
+                else:
+                    # Fallback with integer seconds if setitimer unavailable
+                    secs = int(parse_timeout) if parse_timeout >= 1 else 1
+                    signal.alarm(secs)
+
+                se = ec.SimpleExtractorEx(parser, broken, covering_start, penalty=penalty, log=log)
+                break  # success
+            finally:
+                try:
+                    if hasattr(signal, "setitimer"):
+                        signal.setitimer(signal.ITIMER_REAL, 0)
+                    else:
+                        signal.alarm(0)
+                except Exception:
+                    pass
+                try:
+                    if old_handler is not None:
+                        signal.signal(signal.SIGALRM, old_handler)
+                except Exception:
+                    pass
+
+        except TimeoutError as te:
+            last_err = te
             if log:
-                print(f"[WARN] No solution with penalty={penalty}. Falling back to minimum-penalty solution.")
-            se = ec.SimpleExtractorEx(parser, broken, covering_start, penalty=None, log=log)
-        else:
-            raise
+                try:
+                    print(f"[WARN] parse_prefix timed out after {parse_timeout:.2f}s at max_penalty={mp}; retrying with lower budget...")
+                except Exception:
+                    print(f"[WARN] parse_prefix timed out; retrying with lower budget...")
+            continue
+        except Exception as e:
+            last_err = e
+            # If requested penalty is invalid (no parse with that penalty), fall back to minimum-penalty
+            if penalty is not None and "Invalid penalty" in str(e):
+                if log:
+                    print(f"[WARN] No solution with penalty={penalty}. Falling back to minimum-penalty solution.")
+                try:
+                    se = ec.SimpleExtractorEx(parser, broken, covering_start, penalty=None, log=log)
+                    break
+                except Exception as e2:
+                    last_err = e2
+            else:
+                # propagate other errors
+                raise
+
+    if se is None:
+        # Final fallback: raise last error if parse never succeeded
+        raise last_err if last_err else RuntimeError("parse failed without specific error")
     tree = se.extract_a_tree()
     # Use correction-aware projection that maps covering grammar back to expected terminals
     if hasattr(ec, "tree_to_str_fix_ex"):
@@ -228,7 +481,7 @@ def earley_correct(g: Grammar, start_sym: str, broken: str, symbols: List[str] =
     return fixed
 
 
-def validate_with_match(category: str, text: str) -> bool:
+def validate_with_match(category: str, text: str, validator_cmd: Optional[List[str]] = None) -> bool:
     """
     Validate 'text' using validators/regex/* oracle runners when available, otherwise fallback to match.py.
     Returns True on success (exit code 0).
@@ -250,22 +503,42 @@ def validate_with_match(category: str, text: str) -> bool:
         }
         base = name_map.get(category, category.lower())
 
-        candidates = [
-            os.path.join("validators", "regex", f"validate_{base}"),
-            os.path.join("validators", f"validate_{base}"),
-        ]
         cmd = None
-        for c in candidates:
-            if os.path.exists(c):
-                cmd = [c, temp_path]
-                break
-        if cmd is None:
-            # Fallback to Python validator
-            cmd = ["python3", "match.py", category, temp_path]
+        if validator_cmd:
+            cmd = list(validator_cmd) + [temp_path]
+        else:
+            candidates = [
+                os.path.join("validators", "regex", f"validate_{base}"),
+                os.path.join("validators", f"validate_{base}"),
+            ]
+            for c in candidates:
+                if os.path.exists(c):
+                    cmd = [c, temp_path]
+                    break
+            if cmd is None:
+                # Fallback to Python validator
+                cmd = ["python3", "match.py", category, temp_path]
 
+        # Show input preview and command
+        try:
+            preview = text if len(text) <= 200 else (text[:200] + "...(truncated)")
+        except Exception:
+            preview = "<unprintable>"
+        print(f"[DEBUG] Oracle in: {repr(preview)} (len={len(text)})")
         print(f"[DEBUG] Oracle cmd: {' '.join(cmd)}")
+
+        # Run oracle and show outputs
         res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        return res.returncode == 0
+        out = (res.stdout or "").strip()
+        err = (res.stderr or "").strip()
+        if out:
+            print(f"[DEBUG] Oracle out: {out}")
+        if err:
+            print(f"[DEBUG] Oracle err: {err}")
+        print(f"[DEBUG] Oracle rc: {res.returncode}")
+        verdict = (res.returncode == 0)
+        print(f"[DEBUG] Oracle verdict: {'OK' if verdict else 'FAIL'}")
+        return verdict
     finally:
         try:
             os.remove(temp_path)
@@ -288,9 +561,26 @@ def main():
     ap.add_argument("--unknown-policy", default="negative", choices=["negative","positive","error"], help="Unknown membership policy for SampleTeacher")
     ap.add_argument("--log", action="store_true", help="Verbose logs for ErrorCorrectingEarley")
     ap.add_argument("--penalty", type=int, help="Target correction penalty to select (capped at 8). Omit to choose minimum-penalty solution.")
-    ap.add_argument("--max-penalty", type=int, default=32, help="Max correction penalty allowed during parsing (higher tolerates longer junk). Overrides env LSTAR_MAX_PENALTY.")
+    ap.add_argument("--max-penalty", type=int, default=8, help="Max correction penalty allowed during parsing (higher tolerates longer junk). Overrides env LSTAR_MAX_PENALTY.")
     ap.add_argument("--update-cache-on-relearn", action="store_true", help="If set, overwrite the grammar cache on relearning attempts. Default keeps the original cache intact.")
+    ap.add_argument("--results-json", help="Write per-case repair results to this JSON file")
+    ap.add_argument("--learner", default="lstar_oracle", choices=["lstar_oracle","rpni"], help="Learning algorithm: 'lstar_oracle' (default) uses L* with validator-backed oracle; 'rpni' uses passive RPNI")
+    ap.add_argument("--oracle-validator", help="Path or command for oracle validator; overrides default search under validators/regex or validators")
+    # Equivalence/speed knobs (allow approximate acceptance to reduce oracle queries)
+    ap.add_argument("--eq-max-length", type=int, default=10, help="Max length to sample in equivalence (default: 10)")
+    ap.add_argument("--eq-samples-per-length", type=int, default=50, help="Number of samples per length in equivalence (default: 50)")
+    ap.add_argument("--eq-disable-sampling", action="store_true", help="Disable equivalence sampling (accept hypothesis after pos/neg checks)")
+    ap.add_argument("--eq-skip-negatives", action="store_true", help="Skip checking negatives in equivalence (fewer grammar parses, faster)")
+    ap.add_argument("--eq-max-oracle", type=int, help="Max oracle calls allowed in equivalence sampling per run; accept hypothesis when exhausted")
     args = ap.parse_args()
+
+    # Prepare optional oracle validator command override
+    validator_cmd: Optional[List[str]] = None
+    if getattr(args, "oracle_validator", None):
+        try:
+            validator_cmd = shlex.split(args.oracle_validator)
+        except Exception:
+            validator_cmd = [args.oracle_validator]
 
     # Normalize/cap penalty
     penalty_val = None
@@ -343,7 +633,20 @@ def main():
             return
         print(f"[INFO] Learning initial grammar with provided samples ...")
         t_learn0 = time.time()
-        g_raw, start_sym, alphabet = learn_grammar(positives, teacher_negatives, unknown_policy=args.unknown_policy)
+        if args.learner == "rpni":
+            g_raw, start_sym, alphabet = learn_grammar(positives, teacher_negatives, unknown_policy=args.unknown_policy)
+        else:
+            g_raw, start_sym, alphabet = lstar_learn_with_oracle(
+                positives,
+                teacher_negatives,
+                args.category,
+                validator_cmd,
+                eq_max_length=int(getattr(args, "eq_max_length", 10)),
+                eq_samples_per_length=int(getattr(args, "eq_samples_per_length", 50)),
+                eq_disable_sampling=bool(getattr(args, "eq_disable_sampling", False)),
+                check_negatives=not bool(getattr(args, "eq_skip_negatives", False)),
+                eq_budget=getattr(args, "eq_max_oracle", None),
+            )
         t_learn1 = time.time()
         t_prep0 = time.time()
         # Sanitize to make it JSON-serializable and friendly for the parser
@@ -366,12 +669,14 @@ def main():
     processed = 0
     successes = 0
     failures = 0
+    results: List[Dict[str, Any]] = []
 
     for broken in broken_inputs:
         if args.limit is not None and processed >= args.limit:
             break
         processed += 1
         print(f"\n[CASE {processed}] Broken: {repr(broken)}")
+        last_fixed: Optional[str] = None
 
         # Attempt repair with current grammar
         try:
@@ -393,11 +698,13 @@ def main():
             print(f"[PROFILE] ec_earley: {t3 - t2:.2f}s")
 
             t4 = time.time()
-            ok = validate_with_match(args.category, fixed)
+            ok = validate_with_match(args.category, fixed, validator_cmd)
+            final_ok = ok
             t5 = time.time()
             print(f"[PROFILE] oracle_validate: {t5 - t4:.2f}s")
 
             print(f"[ATTEMPT 0] Fixed: {repr(fixed)} | Oracle: {'OK' if ok else 'FAIL'}")
+            last_fixed = fixed
             # If an output file is requested (bm_xxx integration), write the repaired text
             if getattr(args, "output_file", None):
                 try:
@@ -407,6 +714,10 @@ def main():
                     pass
             if ok:
                 successes += 1
+                try:
+                    results.append({"broken": broken, "fixed": last_fixed, "ok": bool(final_ok)})
+                except Exception:
+                    pass
                 continue
         except Exception as e:
             print(f"[ATTEMPT 0] Error during correction: {e}")
@@ -421,7 +732,20 @@ def main():
             print(f"[INFO] Re-learning with {len(teacher_negatives)} negative(s) (attempt {attempt}/{args.max_attempts}) ...")
             try:
                 t_learn0 = time.time()
-                g_raw, start_sym, alphabet = learn_grammar(positives, teacher_negatives, unknown_policy=args.unknown_policy)
+                if args.learner == "rpni":
+                    g_raw, start_sym, alphabet = learn_grammar(positives, teacher_negatives, unknown_policy=args.unknown_policy)
+                else:
+                    g_raw, start_sym, alphabet = lstar_learn_with_oracle(
+                        positives,
+                        teacher_negatives,
+                        args.category,
+                        validator_cmd,
+                        eq_max_length=int(getattr(args, "eq_max_length", 10)),
+                        eq_samples_per_length=int(getattr(args, "eq_samples_per_length", 50)),
+                        eq_disable_sampling=bool(getattr(args, "eq_disable_sampling", False)),
+                        check_negatives=not bool(getattr(args, "eq_skip_negatives", False)),
+                        eq_budget=getattr(args, "eq_max_oracle", None),
+                    )
                 t_learn1 = time.time()
                 t_prep0 = time.time()
                 g = sanitize_grammar(expand_set_terminals(g_raw, alphabet))
@@ -456,11 +780,13 @@ def main():
                 print(f"[PROFILE] ec_earley(relearn): {t3 - t2:.2f}s")
 
                 t4 = time.time()
-                cur_ok = validate_with_match(args.category, fixed)
+                cur_ok = validate_with_match(args.category, fixed, validator_cmd)
+                final_ok = cur_ok
                 t5 = time.time()
                 print(f"[PROFILE] oracle_validate(relearn): {t5 - t4:.2f}s")
 
                 print(f"[ATTEMPT {attempt}] Fixed: {repr(fixed)} | Oracle: {'OK' if cur_ok else 'FAIL'}")
+                last_fixed = fixed
                 # Update output file with the latest repaired text if requested
                 if getattr(args, "output_file", None):
                     try:
@@ -479,8 +805,20 @@ def main():
             successes += 1
         else:
             failures += 1
+        try:
+            results.append({"broken": broken, "fixed": last_fixed, "ok": bool(final_ok)})
+        except Exception:
+            pass
 
     print(f"\n[SUMMARY] Processed={processed}, Successes={successes}, Failures={failures}")
+    # Optional: write results JSON for batch runs (useful when stdout isn't captured)
+    if getattr(args, "results_json", None):
+        try:
+            with open(args.results_json, "w", encoding="utf-8") as jf:
+                json.dump({"results": results}, jf, ensure_ascii=False, indent=2)
+            print(f"[INFO] Wrote results JSON to {args.results_json}")
+        except Exception as e:
+            print(f"[WARN] Failed to write results JSON: {e}")
 
 
 if __name__ == "__main__":
