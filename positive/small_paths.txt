@@ -1,0 +1,6 @@
+C:\Users\firedog\Documents\Games\Steam\steamapps\common\Counter-Strike Global Offensive\csgo.exe
+C:\Users\firedog\Documents\Games\Steam\steamapps\common\Counter-Strike Global Offensive\steam.exe
+C:\Users\firedog\Documents\Games\Steam\steamapps\common\Counter-Strike Global Offensive\bin\client.dll
+C:\Users\firedog\Documents\Games\Steam\steamapps\common\Counter-Strike Global Offensive\bin\server.dll
+C:\Users\firedog\Documents\Games\Steam\steamapps\common\Counter-Strike Global Offensive\platform\launcher.exe
+C:\Users\firedog\Documents\Games\Steam\steamapps\common\Counter-Strike Global Offensive\csgo\bin\panorama.dll

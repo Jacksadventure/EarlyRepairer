@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 # ───────────────────────────────── CONFIG ────────────────────────────────── #
-DATABASES       = ["single copy.db"]  # list of DB files to analyse
+DATABASES       = ["single.db"]  # list of DB files to analyse
 DEFAULT_TIMEOUT = 600  # seconds for NULL repair_time fallback
 # ─────────────────────────────────────────────────────────────────────────── #
 

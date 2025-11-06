@@ -1,0 +1,24 @@
+https://127.0.0.1/user/profile/search?q=hello world
+https://127.0.0.1/
+https://192.168.1.1/index.html
+http://192.168.1.1/search?q=hello world
+https://192.168.1.1/
+http://amazon.com/
+http://192.168.1.1/
+https://192.168.1.1/user/profile
+http://127.0.0.1/index.html
+http://www.google.com/user/profile/index.html/search?q=query123
+http://amazon.com/
+https://127.0.0.1/user/profile/index.html
+http://192.168.1.1/index.html/search?q=hello world/search?q=test
+http://192.168.1.1/
+http://192.168.1.1/search?q=test
+https://127.0.0.1/index.html
+http://api.google.com/search?q=test/search?q=query123
+https://app.example.com/
+http://google.com/
+http://127.0.0.1/
+https://192.168.1.1/
+https://app.example.com/index.html/
+https://192.168.1.1/
+http://127.0.0.1/

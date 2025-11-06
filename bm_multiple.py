@@ -16,7 +16,7 @@ REPAIR_OUTPUT_DIR = "repair_results"  # Directory where repair outputs are store
 os.makedirs(REPAIR_OUTPUT_DIR, exist_ok=True)
 
 # Possible repair algorithms you want to test
-REPAIR_ALGORITHMS = ["lstar_ec"]
+REPAIR_ALGORITHMS = ["lstar_ec","erepair"]
 
 PROJECT_PATHS = {
     "dot": "project/erepair-subjects/dot/build/dot_parser",
@@ -31,8 +31,7 @@ PROJECT_PATHS = {
     "url":  "python3 match.py URL",
     "isbn": "python3 match.py ISBN",
     "ipv4": "python3 match.py IPv4",
-    "ipv6": "python3 match.py IPv6",
-    "pathfile": "python3 match.py FilePath"
+    "ipv6": "python3 match.py IPv6"
 }
 
 # Mapping for regex-based categories
@@ -42,13 +41,12 @@ REGEX_DIR_TO_CATEGORY = {
     "url": "URL",
     "isbn": "ISBN",
     "ipv4": "IPv4",
-    "ipv6": "IPv6",
-    "pathfile": "FilePath",
+    "ipv6": "IPv6"
 }
 REGEX_FORMATS = set(REGEX_DIR_TO_CATEGORY.keys())
 
 # Valid formats/folders to process
-VALID_FORMATS = ["date", "time", "url", "isbn", "ipv4", "ipv6", "pathfile"]
+VALID_FORMATS = ["date", "time", "url", "isbn", "ipv4", "ipv6"]
 
 
 MUTATION_TYPES = ["double"]
@@ -327,15 +325,22 @@ def repair_and_update_entry(cursor, conn, row):
             # Take the first K originals by id as positives
             cur2.execute(f"SELECT original_text FROM mutations ORDER BY id LIMIT {K}")
             rows = cur2.fetchall()
+            # Leave-One-Out: exclude this row's original_text from positives
+            filtered = [(r[0] or "") for r in rows if (r[0] or "") != (original_text or "")]
             with open(pos_file, "w", encoding="utf-8") as pf:
-                for r in rows:
-                    pf.write(((r[0] or "") + "\n"))
+                for s in filtered:
+                    pf.write(s + "\n")
+            pos_count = len(filtered)
+            if not QUIET:
+                print(f"[DEBUG] (ID={id_}) LOO positives: count={pos_count}, excluded_original={(original_text or '') not in filtered}")
             conn2.close()
         except Exception as e:
-            # Fallback: at least include this row's original_text
+            # Fallback: DB unavailable; write an empty positives file (cache will be used if present)
             try:
                 with open(pos_file, "w", encoding="utf-8") as pf:
-                    pf.write((original_text or "") + "\n")
+                    pass
+                if not QUIET:
+                    print(f"[DEBUG] (ID={id_}) LOO positives fallback: wrote empty pos file due to DB error: {e}")
             except Exception:
                 pass
 
