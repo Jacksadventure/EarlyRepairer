@@ -238,10 +238,15 @@ def levenshtein_distance(a: str, b: str) -> int:
 
 def extract_oracle_info(stdout: str):
     """
-    Example parser for lines like:
-        *** Number of required oracle runs: 10 correct: 5 incorrect: 3 incomplete: 2 ***
-    Adjust if your actual output is different.
+    Parse oracle summary lines. Supports both:
+      - *** Number of required oracle runs: <n> correct: <ok> incorrect: <bad> incomplete: <inc> ***
+      - *** Number of required oracle runs: <n> correct: <ok> incorrect: <bad>
     """
+    # New format (no incomplete, no trailing ***)
+    match = re.search(r"\*\*\* Number of required oracle runs: (\d+) correct: (\d+) incorrect: (\d+)\s*$", stdout, re.MULTILINE)
+    if match:
+        return int(match.group(1)), int(match.group(2)), int(match.group(3)), 0
+    # Old format (with incomplete and trailing ***)
     match = re.search(r"\*\*\* Number of required oracle runs: (\d+) correct: (\d+) incorrect: (\d+) incomplete: (\d+) \*\*\*", stdout)
     if match:
         return int(match.group(1)), int(match.group(2)), int(match.group(3)), int(match.group(4))
@@ -354,7 +359,7 @@ def repair_and_update_entry(cursor, conn, row):
                 pass
 
         # Use our Python repairer with validators/regex oracle (handled inside repairer)
-        attempts = os.environ.get("LSTAR_EC_MAX_ATTEMPTS", "0")
+        attempts = 50
         # Prefer validators/regex validator; allow override via LSTAR_ORACLE_VALIDATOR
         oracle_override = os.environ.get("LSTAR_ORACLE_VALIDATOR")
         oracle_wrapper = os.path.join("validators", "regex", f"validate_{base_format}")
@@ -368,7 +373,8 @@ def repair_and_update_entry(cursor, conn, row):
             "--category", category,
             "--broken-file", input_file,
             "--output-file", output_file,
-            "--max-attempts", attempts
+            "--max-attempts", str(attempts),
+            "--max-penalty", "5"
         ]
         if oracle_cmd:
             cmd += ["--oracle-validator", oracle_cmd]
@@ -384,6 +390,8 @@ def repair_and_update_entry(cursor, conn, row):
             eq_flags += ["--eq-skip-negatives"]
         if os.environ.get("LSTAR_EQ_MAX_ORACLE"):
             eq_flags += ["--eq-max-oracle", os.environ["LSTAR_EQ_MAX_ORACLE"]]
+        learner = os.environ.get("LSTAR_LEARNER", "rpni")
+        cmd += ["--learner", learner]
         cmd += eq_flags
     else:
         # Example usage of your erepair.jar approach
@@ -403,6 +411,8 @@ def repair_and_update_entry(cursor, conn, row):
         if algorithm == "lstar_ec":
             # Allow override via LSTAR_RUN_MAX_PENALTY; default to 2 if not supplied
             env.setdefault("LSTAR_MAX_PENALTY", os.environ.get("LSTAR_RUN_MAX_PENALTY", "2"))
+            # Raise EC parse timeout per attempt unless overridden (default 10s instead of 5s)
+            env.setdefault("LSTAR_PARSE_TIMEOUT", os.environ.get("LSTAR_PARSE_TIMEOUT", "10.0"))
             cache_p = os.path.join("cache", f"lstar_{base_format}.json")
             if not QUIET:
                 try:
@@ -634,6 +644,8 @@ def main():
                         eq_flags += ["--eq-skip-negatives"]
                     if os.environ.get("LSTAR_EQ_MAX_ORACLE"):
                         eq_flags += ["--eq-max-oracle", os.environ["LSTAR_EQ_MAX_ORACLE"]]
+                    learner_pre = os.environ.get("LSTAR_CACHE_LEARNER", os.environ.get("LSTAR_LEARNER", "rpni"))
+                    cmd += ["--learner", learner_pre]
                     cmd += eq_flags
                     print(f"[DEBUG] Precompute cache for {format_key}: {' '.join(cmd)} (K={pre_k})")
                     pre_tmo = int(os.environ.get("LSTAR_PRECOMPUTE_TIMEOUT", "600"))

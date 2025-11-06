@@ -308,5 +308,5 @@ int main(int argc, char* argv[]) {
     } else {
         std::cout << "No valid repair found." << std::endl;
     }
-    printf("*** Number of required oracle runs: %d correct: %d incorrect: %d incomplete: %d ***\n", interations, success, failure, incomplete);
+    printf("*** Number of required oracle runs: %lld correct: %lld incorrect: %lld \n", (long long)interations, (long long)success, (long long)failure);
 }

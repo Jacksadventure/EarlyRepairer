@@ -41,6 +41,9 @@ def Any_not(t: str) -> str:
 # Optimized terminal symbols used by augment_grammar_ex
 Any_term = '$.'
 Any_not_term = '!%s'
+Del_sym_str = '<$del[%s]>'
+def Del_sym(t: str) -> str:
+    return Del_sym_str % t
 
 def translate_terminal(t) -> str:
     # Coerce to string to avoid passing non-strings (e.g., set) into is_nt
@@ -96,15 +99,20 @@ def augment_grammar_ex(g: Dict[str, List[List[str]]], start: str, symbols: List[
     # Empty
     Match_empty = {Empty: [[]]}
 
+    # Match delete: delete this grammar position (epsilon)
+    Match_del_sym: Dict[str, List[List[str]]] = {}
+    for kk in symbols:
+        Match_del_sym[Del_sym(kk)] = [[]]
+
     # For each terminal 'kk' in original grammar
-    # <$ [kk]> -> kk | <$.+> kk | <$ > | <$![kk]>
+    # <$ [kk]> -> kk | <$.> kk | <$ > | <$![kk]>
     Match_a_sym: Dict[str, List[List[str]]] = {}
     for kk in symbols:
         Match_a_sym[This_sym(kk)] = [
             [kk],
-            [Any_plus, kk],
-            [Empty],
+            [Any_one, kk],
             [Any_not(kk)],
+            [Empty],
         ]
 
     start_g, start_s = add_start(start)
@@ -116,6 +124,7 @@ def augment_grammar_ex(g: Dict[str, List[List[str]]], start: str, symbols: List[
         **Match_any_sym_plus,
         **Match_a_sym,
         **Match_any_sym_except,
+        **Match_del_sym,
         **Match_empty,
     }
     return covering, start_s
@@ -125,7 +134,15 @@ def nullable_ex(g: Dict[str, List[List[str]]]) -> Dict[str, int]:
     Compute nullable nonterminals and their penalties.
     Penalty 1 for Empty, Any_one, Any_not(...) flows through.
     """
-    nullable_keys = {k: (1 if k == Empty else 0) for k in g if [] in g[k]}
+    nullable_keys = {}
+    for k in g:
+        if [] in g[k]:
+            if k == Empty:
+                nullable_keys[k] = 1
+            elif isinstance(k, str) and k.startswith('<$del['):
+                nullable_keys[k] = 2
+            else:
+                nullable_keys[k] = 0
     unprocessed = list(nullable_keys.keys())
 
     g_cur_ = rem_terminals(g)
@@ -219,6 +236,8 @@ class ECState(earleyparser.State):
             self.penalty = 1
         elif isinstance(self.name, str) and self.name.startswith(Any_not_str[0:4]):  # '<$![...]>'
             self.penalty = 1
+        elif isinstance(self.name, str) and self.name.startswith('<$del['):
+            self.penalty = 2
         else:
             self.penalty = 0
 
@@ -324,7 +343,15 @@ class SimpleExtractorEx(SimpleExtractor):
         if penalty is not None:
             my_starts = [s for s in starts if s.penalty == penalty]
         else:
-            my_starts = sorted(starts, key=lambda x: x.penalty)
+            # Prefer start states that do NOT use trailing Any_plus (i.e., c_start -> start <$.+>)
+            # when penalties tie, to encourage length-preserving fixes (e.g., substitutions)
+            def _has_trailing_any_plus(st):
+                try:
+                    expr = getattr(st, "expr", ())
+                    return Any_plus in expr
+                except Exception:
+                    return False
+            my_starts = sorted(starts, key=lambda x: (x.penalty, 1 if _has_trailing_any_plus(x) else 0))
         if not my_starts:
             raise Exception("Invalid penalty", penalty)
         if self.log:
@@ -348,6 +375,105 @@ class SimpleExtractorEx(SimpleExtractor):
         states = [s for s, kind, chart in p if kind == 'n']
         return sum([s.penalty for s in states])
 
+class MultiExtractorEx:
+    """
+    Enumerate ALL candidate parse trees (and thus repair strings) for the given text
+    up to the parser's max_penalty in a single EC run.
+
+    Usage:
+      parser = ErrorCorrectingEarleyParser(covering_grammar)
+      parser.max_penalty = N  # pruning upper bound (≤ N explored)
+      mx = MultiExtractorEx(parser, text, start_symbol, penalties=None, log=False)
+      for tree in mx.trees(limit=K):
+          ...
+
+    Notes:
+    - This enumerates across:
+        (a) all finished start states returned by parse_prefix (i.e., different total penalties),
+        (b) all path choices in the parse forest for each start state.
+    - 'penalties' can restrict which exact total penalties to enumerate.
+    - Use lstar-standalone/lstar/repairer_lstar_ec.py's projection (tree_to_str_fix_ex) to map
+      covering grammar trees back to terminal strings.
+    """
+    def __init__(self, parser: ErrorCorrectingEarleyParser, text: str, start_symbol: str, penalties=None, log: bool = False):
+        self.parser = parser
+        self.text = text
+        self.start_symbol = start_symbol
+        self.log = log
+        t0 = time.time()
+        cursor, states = parser.parse_prefix(text, start_symbol)
+        t1 = time.time()
+        if self.log:
+            try:
+                ncols = len(parser.table)
+                nstates = sum(len(c.states) for c in parser.table)
+                print(f"[PROFILE] parse_prefix: {t1 - t0:.2f}s, cols={ncols}, states={nstates}")
+            except Exception:
+                print(f"[PROFILE] parse_prefix: {t1 - t0:.2f}s")
+        starts = [s for s in states if s.finished()]
+        if cursor < len(text) or not starts:
+            raise SyntaxError("at " + repr(cursor))
+        if penalties is not None:
+            try:
+                pen_set = set(int(p) for p in penalties)
+            except Exception:
+                pen_set = set(penalties)
+            starts = [s for s in starts if s.penalty in pen_set]
+        # Sort by increasing total correction penalty, then by insertion order
+        self.starts = sorted(starts, key=lambda x: x.penalty)
+
+    def _enum_ntree(self, forest_node, seen=None):
+        """
+        Recursively enumerate parse trees (nonterminal-only) with cycle guards.
+        'seen' tracks (id(state), kind, id(chart)) visited along the current expansion path
+        to avoid infinite recursion in cyclic forests (e.g., due to nullable/recursive rules).
+        forest_node is expected to be a tuple: (name, paths), where each path is a list of
+        (state, kind, chart) triples to expand.
+        """
+        if seen is None:
+            seen = set()
+        name, paths = forest_node
+        # If no alternative paths, yield leaf
+        if not paths:
+            yield (name, [])
+            return
+        import itertools as I
+        for path in paths:
+            # Maintain per-branch visited set to prevent cycles
+            local_seen = set(seen)
+            child_iters = []
+            skip = False
+            for s, kind, chart in path:
+                key = (id(s), kind, id(chart))
+                if key in local_seen:
+                    # Cycle detected on this branch; skip this path
+                    skip = True
+                    break
+                local_seen.add(key)
+                subnode = self.parser.forest(s, kind, chart)
+                child_iters.append(self._enum_ntree(subnode, local_seen))
+            if skip:
+                continue
+            # Cartesian product across child expansions
+            for prod in I.product(*child_iters) if child_iters else [()]:
+                yield (name, list(prod))
+
+    def trees(self, limit: int = None):
+        """
+        Yield parse trees (nonterminal-only structure) across all finished start states,
+        traversing all forest path choices. If 'limit' is provided, stop after emitting
+        that many trees.
+        """
+        count = 0
+        for st in self.starts:
+            forest = self.parser.parse_forest(self.parser.table, [st])
+            for ntree in self._enum_ntree(forest, set()):
+                yield ntree
+                count += 1
+                if limit is not None and count >= limit:
+                    return
+
+
 def tree_to_str_fix_ex(tree) -> str:
     """
     Build the corrected string (projecting covering grammar back to original grammar):
@@ -368,7 +494,13 @@ def tree_to_str_fix_ex(tree) -> str:
                 i1 = key.find('[')
                 i2 = key.rfind(']')
                 expected = key[i1 + 1:i2]
-                out.append(expected)
+                # If deletion branch chosen, do not emit expected
+                has_delete = any(
+                    isinstance(ch, tuple) and isinstance(ch[0], str) and (ch[0] == Empty or ch[0].startswith('<$del['))
+                    for ch in children
+                )
+                if not has_delete:
+                    out.append(expected)
                 # Do not recurse into children; they encode corrections/junk
                 return
             # Skip Any_plus/Empty machinery nodes entirely

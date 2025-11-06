@@ -1,0 +1,2 @@
+/usr/bin/ar qc liblstar.a CMakeFiles/lstar.dir/src/DFA.cpp.o CMakeFiles/lstar.dir/src/ObservationTable.cpp.o CMakeFiles/lstar.dir/src/LStar.cpp.o
+/usr/bin/ranlib liblstar.a

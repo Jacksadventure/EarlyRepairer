@@ -1,0 +1,25 @@
+*ttps://127.0.0.*/user/prof*le/search?q=hello world
+https:*/127.0.*.*/
+http*://19*.168.*.1/index.html
+http://192.168.1.1/search?q=hell* *orl*
+http*://192.1*8.1*1/
+http:*/ama*on.com*
+htt*:/*192.168*1.1/
+https://19*.*68.1.1*user/profile
+ht*p://*27.0.0.1/ind*x.html
+http://www.google.com/user/p*ofi*e/index.html/search?q=quer*123
+ht*p:/*amaz*n.com/
+https://127.0.0*1/user/p**file/index.html
+http://192*168.1.1/ind*x.h*ml/search?q=hello world/search?q=test
+http*//192*168.1.1*
+http:/*192.1**.1.1/search?q=test
+ht*ps:/*127.0.0.1/index.htm*
+http://app*amazon.com/user*prof*le/
+http*//api.google.com/search?q=test/searc*?q=q*ery123
+ht*ps://app.*xamp*e.com/
+http://*oog*e.co*/
+*ttp://12*.0.*.1/
+*ttp**//192.168.1.1/
+ht*ps://app.example.c*m/index.h*ml/
+https*//1*2*168.1.1/
+ht*p*//127.0.0*1/

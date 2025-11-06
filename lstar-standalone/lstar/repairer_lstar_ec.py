@@ -338,6 +338,7 @@ def lstar_learn_with_oracle(
 
     # L* main loop (closed/consistent) with equivalence via oracle
     while True:
+        count = 0
         while True:
             is_closed, unknown_P = T.closed()
             is_consistent, _, unknown_AS = T.consistent()
@@ -347,6 +348,9 @@ def lstar_learn_with_oracle(
                 T.add_prefix(unknown_P, oracle)
             if not is_consistent:
                 T.add_suffix(unknown_AS, oracle)
+            count += 1
+            if count == 1:
+                break  
         grammar, start = T.grammar()
         eq, counter = oracle.is_equivalent(grammar, start)
         if eq or counter is None:
@@ -481,6 +485,124 @@ def earley_correct(g: Grammar, start_sym: str, broken: str, symbols: List[str] =
     return fixed
 
 
+def earley_correct_min_penalty(g: Grammar, start_sym: str, broken: str, symbols: List[str] = None, log: bool = False, min_penalty: int = 1, max_penalty: Optional[int] = None) -> Optional[str]:
+    """
+    Like earley_correct but forces the minimum correction penalty to be >= min_penalty.
+    Tries exact penalties p in [min_penalty..max_penalty] using SimpleExtractorEx (single-parse per p).
+    Returns first fixed string found, or None if no parse exists in the range.
+    """
+    if symbols is None:
+        symbols = terminals_of_grammar(g)
+    cover, start_cov = ec.augment_grammar_ex(g, start_sym, symbols=symbols)
+    parser = ec.ErrorCorrectingEarleyParser(cover)
+
+    # Determine bounds
+    if max_penalty is None:
+        try:
+            max_penalty = int(os.getenv("LSTAR_MAX_PENALTY", "32"))
+        except Exception:
+            max_penalty = 32
+    try:
+        parse_timeout = float(os.getenv("LSTAR_PARSE_TIMEOUT", "5.0"))
+    except Exception:
+        parse_timeout = 5.0
+
+    # Iterate target penalties p = min_penalty..max_penalty
+    for p in range(max(1, int(min_penalty)), max(1, int(max_penalty)) + 1):
+        try:
+            # Apply prune budget
+            try:
+                parser.max_penalty = int(max_penalty)
+            except Exception:
+                pass
+
+            # Timeout guard
+            import signal
+            def _timeout_handler(signum, frame):
+                raise TimeoutError("parse timeout")
+            old_handler = None
+            try:
+                old_handler = signal.getsignal(signal.SIGALRM)
+                signal.signal(signal.SIGALRM, _timeout_handler)
+            except Exception:
+                old_handler = None
+            try:
+                if hasattr(signal, "setitimer"):
+                    signal.setitimer(signal.ITIMER_REAL, max(0.0, parse_timeout))
+                else:
+                    secs = int(parse_timeout) if parse_timeout >= 1 else 1
+                    signal.alarm(secs)
+                se = ec.SimpleExtractorEx(parser, broken, start_cov, penalty=p, log=log)
+            finally:
+                try:
+                    if hasattr(signal, "setitimer"):
+                        signal.setitimer(signal.ITIMER_REAL, 0)
+                    else:
+                        signal.alarm(0)
+                except Exception:
+                    pass
+                try:
+                    if old_handler is not None:
+                        signal.signal(signal.SIGALRM, old_handler)
+                except Exception:
+                    pass
+
+            # Success: extract and project
+            tree = se.extract_a_tree()
+            if hasattr(ec, "tree_to_str_fix_ex"):
+                return ec.tree_to_str_fix_ex(tree)
+            else:
+                return ec.tree_to_str(tree)
+        except Exception as e:
+            # Just try next penalty on invalid/no-parse/timeout
+            if log:
+                try:
+                    print(f"[DEBUG] min-penalty probe p={p} failed: {e}")
+                except Exception:
+                    pass
+            continue
+    return None
+
+
+def enumerate_repairs(g: Grammar, start_sym: str, broken: str, symbols: List[str] = None, log: bool = False, max_penalty: Optional[int] = None, penalties: Optional[List[int]] = None, limit: Optional[int] = None) -> List[str]:
+    """
+    Enumerate ALL candidate repairs up to max_penalty using EC MultiExtractorEx in one parse.
+    Returns a de-duplicated list of candidate fixed strings (order by increasing total penalty).
+    """
+    # If symbols not provided, infer from grammar terminals
+    if symbols is None:
+        symbols = terminals_of_grammar(g)
+    covering_grammar, covering_start = ec.augment_grammar_ex(g, start_sym, symbols=symbols)
+    parser = ec.ErrorCorrectingEarleyParser(covering_grammar)
+    # Configure parser pruning threshold: CLI-provided > env > default 32
+    if max_penalty is None:
+        try:
+            max_penalty = int(os.getenv("LSTAR_MAX_PENALTY", "32"))
+        except Exception:
+            max_penalty = 32
+    try:
+        parser.max_penalty = int(max_penalty)
+    except Exception:
+        pass
+    # Single parse_prefix; enumerate all trees across penalties and forest choices
+    mx = ec.MultiExtractorEx(parser, broken, covering_start, penalties=penalties, log=log)
+    out: List[str] = []
+    seen = set()
+    count = 0
+    for ntree in mx.trees(limit=limit):
+        if hasattr(ec, "tree_to_str_fix_ex"):
+            fixed = ec.tree_to_str_fix_ex(ntree)
+        else:
+            fixed = ec.tree_to_str(ntree)
+        if fixed not in seen:
+            seen.add(fixed)
+            out.append(fixed)
+            count += 1
+            if limit is not None and count >= limit:
+                break
+    return out
+
+
 def validate_with_match(category: str, text: str, validator_cmd: Optional[List[str]] = None) -> bool:
     """
     Validate 'text' using validators/regex/* oracle runners when available, otherwise fallback to match.py.
@@ -527,18 +649,38 @@ def validate_with_match(category: str, text: str, validator_cmd: Optional[List[s
         print(f"[DEBUG] Oracle in: {repr(preview)} (len={len(text)})")
         print(f"[DEBUG] Oracle cmd: {' '.join(cmd)}")
 
-        # Run oracle and show outputs
-        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        out = (res.stdout or "").strip()
-        err = (res.stderr or "").strip()
-        if out:
-            print(f"[DEBUG] Oracle out: {out}")
-        if err:
-            print(f"[DEBUG] Oracle err: {err}")
-        print(f"[DEBUG] Oracle rc: {res.returncode}")
-        verdict = (res.returncode == 0)
-        print(f"[DEBUG] Oracle verdict: {'OK' if verdict else 'FAIL'}")
-        return verdict
+        # Run oracle with timeout and show outputs; treat hang as reject
+        try:
+            try:
+                oracle_timeout = float(os.getenv("LSTAR_ORACLE_TIMEOUT", "3.0"))
+            except Exception:
+                oracle_timeout = 3.0
+            res = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=max(0.001, oracle_timeout),
+            )
+            out = (res.stdout or "").strip()
+            err = (res.stderr or "").strip()
+            if out:
+                print(f"[DEBUG] Oracle out: {out}")
+            if err:
+                print(f"[DEBUG] Oracle err: {err}")
+            print(f"[DEBUG] Oracle rc: {res.returncode}")
+            verdict = (res.returncode == 0)
+            print(f"[DEBUG] Oracle verdict: {'OK' if verdict else 'FAIL'}")
+            return verdict
+        except subprocess.TimeoutExpired:
+            try:
+                print(f"[WARN] Oracle timed out after {oracle_timeout:.2f}s; treating as REJECT and skipping.")
+            except Exception:
+                print("[WARN] Oracle timed out; treating as REJECT and skipping.")
+            return False
+        except Exception as e:
+            print(f"[WARN] Oracle execution error: {e}; treating as REJECT.")
+            return False
     finally:
         try:
             os.remove(temp_path)
@@ -550,13 +692,13 @@ def main():
     ap = argparse.ArgumentParser(description="Repair erroneous inputs using RPNI-inferred DFA grammar + Error-Correcting Earley")
     ap.add_argument("--positives", help="Path to positives.txt (one string per line; empty line is epsilon). Optional if --grammar-cache exists.")
     ap.add_argument("--negatives", help="Path to negatives.txt (initial negative set; optional)")
-    ap.add_argument("--broken-file", help="Path to file with broken inputs (one per line; optional)")
+    ap.add_argument("--broken-file", help="Path to a file containing a single broken input; the entire file content is used")
     ap.add_argument("--broken", help="Single broken input string to repair (optional)")
     ap.add_argument("--output-file", help="If given and exactly one broken input is processed, write repaired text here")
     ap.add_argument("--grammar-cache", help="Path to cache JSON for learned grammar. If exists (and no --init-cache), it will be loaded; else a new cache will be saved after learning.")
     ap.add_argument("--init-cache", action="store_true", help="Force re-learn from provided pos/neg and overwrite the cache at --grammar-cache.")
     ap.add_argument("--category", required=True, choices=["Date","Time","URL","ISBN","IPv4","IPv6","FilePath"], help="Oracle category for match.py")
-    ap.add_argument("--max-attempts", type=int, default=5, help="Max attempts to relearn with added negatives on oracle failure")
+    ap.add_argument("--max-attempts", type=int, default=500, help="Max attempts to relearn with added negatives on oracle failure")
     ap.add_argument("--limit", type=int, default=10, help="Limit number of negatives to process (for quick runs)")
     ap.add_argument("--unknown-policy", default="negative", choices=["negative","positive","error"], help="Unknown membership policy for SampleTeacher")
     ap.add_argument("--log", action="store_true", help="Verbose logs for ErrorCorrectingEarley")
@@ -572,6 +714,10 @@ def main():
     ap.add_argument("--eq-disable-sampling", action="store_true", help="Disable equivalence sampling (accept hypothesis after pos/neg checks)")
     ap.add_argument("--eq-skip-negatives", action="store_true", help="Skip checking negatives in equivalence (fewer grammar parses, faster)")
     ap.add_argument("--eq-max-oracle", type=int, help="Max oracle calls allowed in equivalence sampling per run; accept hypothesis when exhausted")
+    # EC enumeration controls
+    ap.add_argument("--ec-enumerate", action="store_true", help="Enumerate ALL repair candidates up to max-penalty in a single EC run")
+    ap.add_argument("--ec-limit", type=int, help="Optional cap on number of candidates enumerated per input to avoid explosion")
+    ap.add_argument("--accumulate-negatives-round", action="store_true", help="Accumulate failing broken inputs across a full pass, then relearn once (batch rounds)")
     args = ap.parse_args()
 
     # Prepare optional oracle validator command override
@@ -595,13 +741,23 @@ def main():
     pos_lines = read_lines(args.positives) if args.positives and os.path.isfile(args.positives) else []
     neg_lines = read_lines(args.negatives) if args.negatives and os.path.isfile(args.negatives) else []
     broken_inputs: List[str] = []
+    # Only one input is allowed: either --broken-file or --broken
     if getattr(args, "broken_file", None) and os.path.isfile(args.broken_file):
-        broken_inputs += read_lines(args.broken_file)
-    if getattr(args, "broken", None):
+        try:
+            with open(args.broken_file, "r", encoding="utf-8") as f:
+                content = f.read()
+        except Exception as e:
+            print(f"[ERROR] Failed to read --broken-file: {e}")
+            return
+        # Use entire file content as a single broken input; strip one trailing newline for parity with --broken
+        if content.endswith("\n"):
+            content = content[:-1]
+        broken_inputs.append(content)
+    if getattr(args, "broken", None) is not None:
+        if broken_inputs:
+            print("[ERROR] Provide only one of --broken or --broken-file, not both.")
+            return
         broken_inputs.append(args.broken)
-    # de-dup preserving order
-    _seen = set()
-    broken_inputs = [x for x in broken_inputs if not (x in _seen or _seen.add(x))]
 
     positives = set(pos_lines)
 
@@ -677,57 +833,67 @@ def main():
         processed += 1
         print(f"\n[CASE {processed}] Broken: {repr(broken)}")
         last_fixed: Optional[str] = None
+        t0 = time.time()
+        if any(isinstance(t, (set, frozenset)) for alts in g.values() for alt in alts for t in alt):
+            g_norm = sanitize_grammar(expand_set_terminals(g, alphabet))
+        else:
+            g_norm = g
+        assert_no_set_tokens(g_norm)
+        t1 = time.time()
+        print(f"[PROFILE] normalize: {t1 - t0:.2f}s")
 
-        # Attempt repair with current grammar
+        debug_count_symbol_types(g_norm)
+
+        # If the broken input is already accepted by the learned grammar but the oracle rejects it,
+        # treat it as a counterexample: add to negatives and trigger relearning path
         try:
-            # Normalize grammar only if needed; profile time
-            t0 = time.time()
-            if any(isinstance(t, (set, frozenset)) for alts in g.values() for alt in alts for t in alt):
-                g_norm = sanitize_grammar(expand_set_terminals(g, alphabet))
-            else:
-                g_norm = g
-            assert_no_set_tokens(g_norm)
-            t1 = time.time()
-            print(f"[PROFILE] normalize: {t1 - t0:.2f}s")
+            parser0 = earleyparser.EarleyParser(g_norm)
+            list(parser0.recognize_on(broken, start_sym))
+            # Grammar accepts; consult oracle
+            t_or0 = time.time()
+            ok0 = validate_with_match(args.category, broken, validator_cmd)
+            t_or1 = time.time()
+            print(f"[PROFILE] oracle_validate(as-is): {t_or1 - t_or0:.2f}s")
+            if not ok0:
+                print("[INFO] As-is input is accepted by grammar but rejected by oracle; scheduling relearn.")
+                last_fixed = None
+                raise RuntimeError("oracle-rejects-accepted")
+        except Exception as _e:
+            # If grammar doesn't accept or membership check raises, carry on to EC
+            pass
 
-            debug_count_symbol_types(g_norm)
+        # Default path: either single best (earley_correct) or enumerate all candidates (MultiExtractorEx)
+        t2 = time.time()
+        fixed = earley_correct(g_norm, start_sym, broken, symbols=alphabet, log=args.log, penalty=penalty_val, max_penalty=int(getattr(args, "max_penalty", 8)))
+        t3 = time.time()
+        print(f"[PROFILE] ec_earley: {t3 - t2:.2f}s")
 
-            t2 = time.time()
-            fixed = earley_correct(g_norm, start_sym, broken, symbols=alphabet, log=args.log, penalty=penalty_val, max_penalty=args.max_penalty)
-            t3 = time.time()
-            print(f"[PROFILE] ec_earley: {t3 - t2:.2f}s")
+        t4 = time.time()
+        ok = validate_with_match(args.category, fixed, validator_cmd)
+        final_ok = ok
+        t5 = time.time()
+        print(f"[PROFILE] oracle_validate: {t5 - t4:.2f}s")
 
-            t4 = time.time()
-            ok = validate_with_match(args.category, fixed, validator_cmd)
-            final_ok = ok
-            t5 = time.time()
-            print(f"[PROFILE] oracle_validate: {t5 - t4:.2f}s")
+        print(f"[ATTEMPT 0] Fixed: {repr(fixed)} | Oracle: {'OK' if ok else 'FAIL'}")
+        last_fixed = fixed
+        # If an output file is requested (bm_xxx integration), write the repaired text
+        if getattr(args, "output_file", None):
+            try:
+                with open(args.output_file, "w", encoding="utf-8") as outf:
+                    outf.write(fixed)
+            except Exception:
+                pass
+        if ok:
+            successes += 1
+            results.append({"broken": broken, "fixed": last_fixed, "ok": bool(final_ok)})
+            continue
 
-            print(f"[ATTEMPT 0] Fixed: {repr(fixed)} | Oracle: {'OK' if ok else 'FAIL'}")
-            last_fixed = fixed
-            # If an output file is requested (bm_xxx integration), write the repaired text
-            if getattr(args, "output_file", None):
-                try:
-                    with open(args.output_file, "w", encoding="utf-8") as outf:
-                        outf.write(fixed)
-                except Exception:
-                    pass
-            if ok:
-                successes += 1
-                try:
-                    results.append({"broken": broken, "fixed": last_fixed, "ok": bool(final_ok)})
-                except Exception:
-                    pass
-                continue
-        except Exception as e:
-            print(f"[ATTEMPT 0] Error during correction: {e}")
-            print(traceback.format_exc())
-            ok = False
-
-        # If oracle failed, add this broken example to Teacher.negatives and relearn up to max-attempts
+        # If oracle failed, add this broken example and the best failed candidate (if any) to Teacher.negatives and relearn up to max-attempts
         attempt = 1
         cur_ok = ok
         while attempt <= args.max_attempts and not cur_ok:
+            if last_fixed:
+                teacher_negatives.add(last_fixed)
             teacher_negatives.add(broken)
             print(f"[INFO] Re-learning with {len(teacher_negatives)} negative(s) (attempt {attempt}/{args.max_attempts}) ...")
             try:
@@ -774,8 +940,24 @@ def main():
 
                 debug_count_symbol_types(g_norm)
 
+                # If the broken input is already accepted by the learned grammar but the oracle rejects it,
+                # treat it as a counterexample and continue to next relearn iteration
+                try:
+                    parser0 = earleyparser.EarleyParser(g_norm)
+                    list(parser0.recognize_on(broken, start_sym))
+                    t_or0 = time.time()
+                    ok0 = validate_with_match(args.category, broken, validator_cmd)
+                    t_or1 = time.time()
+                    print(f"[PROFILE] oracle_validate(as-is,relearn): {t_or1 - t_or0:.2f}s")
+                    if not ok0:
+                        print(f"[INFO] [ATTEMPT {attempt}] As-is input accepted by grammar but rejected by oracle; will relearn again.")
+                        last_fixed = None
+                        raise RuntimeError("oracle-rejects-accepted")
+                except Exception as _e:
+                    pass
+
                 t2 = time.time()
-                fixed = earley_correct(g_norm, start_sym, broken, symbols=alphabet, log=args.log, penalty=penalty_val, max_penalty=args.max_penalty)
+                fixed = earley_correct(g_norm, start_sym, broken, symbols=alphabet, log=args.log, penalty=penalty_val, max_penalty=int(getattr(args, "max_penalty", 8)))
                 t3 = time.time()
                 print(f"[PROFILE] ec_earley(relearn): {t3 - t2:.2f}s")
 

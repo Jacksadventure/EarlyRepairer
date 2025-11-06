@@ -465,8 +465,8 @@ int main(int argc, char* argv[])
         if (oracle(input) == Res::OK) {
             std::ofstream(outF) << input;
             std::cout << "Repaired string: " << input << "\n";
-            printf("*** Number of required oracle runs: %lld correct: %lld incorrect: %lld incomplete: %lld ***\n",
-                   ORACLE, OK, BAD, INC);
+            printf("*** Number of required oracle runs: %lld correct: %lld incorrect: %lld \n",
+                   ORACLE, OK, BAD);
             return 0;
         }
 
@@ -512,8 +512,8 @@ int main(int argc, char* argv[])
             if (oracle_cached(cand) == Res::OK) {
                 std::ofstream(outF) << cand;
                 std::cout << "Repaired string: " << cand << "\n";
-                printf("*** Number of required oracle runs: %lld correct: %lld incorrect: %lld incomplete: %lld ***\n",
-                       ORACLE, OK, BAD, INC);
+                printf("*** Number of required oracle runs: %lld correct: %lld incorrect: %lld \n",
+                       ORACLE, OK, BAD);
                 return true;
             }
             return false;
@@ -555,14 +555,14 @@ int main(int argc, char* argv[])
         }
 
         std::cout << "No fix with up to " << MAX_EDITS << " edits found.\n";
-        printf("*** Number of required oracle runs: %lld correct: %lld incorrect: %lld incomplete: %lld ***\n",
-               ORACLE, OK, BAD, INC);
+        printf("*** Number of required oracle runs: %lld correct: %lld incorrect: %lld \n",
+               ORACLE, OK, BAD);
         return 1;
     } catch (const std::exception& e) {
         ++BAD;
         std::cerr << "Unhandled exception: " << e.what() << "\n";
-        printf("*** Number of required oracle runs: %lld correct: %lld incorrect: %lld incomplete: %lld ***\n",
-               ORACLE, OK, BAD, INC);
+        printf("*** Number of required oracle runs: %lld correct: %lld incorrect: %lld \n",
+               ORACLE, OK, BAD);
         return 1;
     }
 }
