@@ -55,6 +55,7 @@ except Exception:
     # Fallback to DFA-based RPNI if NFA variant unavailable
     from lstar.rpni import learn_grammar_from_samples as rpni_learn_grammar
 from lstar.rpni_nfa import learn_grammar_from_samples_nfa as rpni_nfa_learn_grammar
+from lstar.rpni_fuzz import learn_grammar_from_samples_fuzz as rpni_fuzz_learn_grammar
 from lstar.observation_table import ObservationTable
 import earleyparser
 import cfgrandomsample
@@ -833,7 +834,7 @@ def main():
     ap.add_argument("--max-penalty", type=int, default=8, help="Max correction penalty allowed during parsing (higher tolerates longer junk). Overrides env LSTAR_MAX_PENALTY.")
     ap.add_argument("--update-cache-on-relearn", action="store_true", help="If set, overwrite the grammar cache on relearning attempts. Default keeps the original cache intact.")
     ap.add_argument("--results-json", help="Write per-case repair results to this JSON file")
-    ap.add_argument("--learner", default="lstar_oracle", choices=["lstar_oracle","rpni","rpni_nfa"], help="Learning algorithm: 'lstar_oracle' (default) uses L* with validator-backed oracle; 'rpni' uses passive RPNI; 'rpni_nfa' uses modified RPNI that keeps an NFA")
+    ap.add_argument("--learner", default="lstar_oracle", choices=["lstar_oracle","rpni","rpni_nfa","rpni_fuzz"], help="Learning algorithm: 'lstar_oracle' (default) uses L* with validator-backed oracle; 'rpni' uses passive RPNI; 'rpni_nfa' uses modified RPNI that keeps an NFA; 'rpni_fuzz' uses RPNI with fuzzing-based DFA consistency checks")
     ap.add_argument("--oracle-validator", help="Path or command for oracle validator; overrides default search under validators/regex or validators")
     # Equivalence/speed knobs (allow approximate acceptance to reduce oracle queries)
     ap.add_argument("--eq-max-length", type=int, default=10, help="Max length to sample in equivalence (default: 10)")
@@ -859,6 +860,10 @@ def main():
             validator_cmd = shlex.split(args.oracle_validator)
         except Exception:
             validator_cmd = [args.oracle_validator]
+
+    # Membership callback for fuzzing-based learners (rpni_fuzz)
+    def _is_member_oracle(text: str) -> bool:
+        return validate_with_match(args.category, text, validator_cmd)
 
     # Normalize/cap penalty
     penalty_val = None
@@ -973,6 +978,8 @@ def main():
             g_raw, start_sym, alphabet = learn_grammar(positives, teacher_negatives, unknown_policy=args.unknown_policy)
         elif args.learner == "rpni_nfa":
             g_raw, start_sym, alphabet = learn_grammar_nfa(positives, teacher_negatives, unknown_policy=args.unknown_policy)
+        elif args.learner == "rpni_fuzz":
+            g_raw, start_sym, alphabet = rpni_fuzz_learn_grammar(positives, teacher_negatives, is_member=_is_member_oracle)
         else:
             g_raw, start_sym, alphabet = lstar_learn_with_oracle(
                 positives,
@@ -1098,6 +1105,8 @@ def main():
                     g_raw, start_sym, alphabet = learn_grammar(positives, teacher_negatives, unknown_policy=args.unknown_policy)
                 elif args.learner == "rpni_nfa":
                     g_raw, start_sym, alphabet = learn_grammar_nfa(positives, teacher_negatives, unknown_policy=args.unknown_policy)
+                elif args.learner == "rpni_fuzz":
+                    g_raw, start_sym, alphabet = rpni_fuzz_learn_grammar(positives, teacher_negatives, is_member=_is_member_oracle)
                 else:
                     g_raw, start_sym, alphabet = lstar_learn_with_oracle(
                         positives,

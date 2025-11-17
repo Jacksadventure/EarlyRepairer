@@ -51,6 +51,7 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Tuple, Iterable, Optional, Set
 from importlib.machinery import SourceFileLoader
+import simplefuzzer as fuzzer
 
 REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CACHE_DIR = os.path.join(REPO_ROOT, "cache")
@@ -84,49 +85,30 @@ def write_json(path: str, obj) -> None:
 
 
 # --------------
-# Grammar fuzzing (right-linear grammar)
+# Grammar fuzzing (right-linear grammar) — via simplefuzzer.LimitFuzzer
 # --------------
-
-def sample_from_right_linear(grammar: Dict[str, List[List[str]]], start_sym: str,
-                             max_steps: int = 4096) -> str:
-    """Randomly sample a string from a right-linear grammar of the form:
-        <Qi> -> [a, <Qj>] | []
-    Returns a string (terminals are single characters).
-    """
-    if start_sym not in grammar or not grammar[start_sym]:
-        return ""
-    sym = start_sym
-    out_chars: List[str] = []
-    steps = 0
-    while steps < max_steps:
-        steps += 1
-        rules = grammar.get(sym, [])
-        if not rules:
-            # dead-end; stop
-            break
-        # Prefer terminating sometimes to avoid long walks if epsilon exists
-        eps_rules = [r for r in rules if len(r) == 0]
-        non_eps = [r for r in rules if len(r) > 0]
-        if eps_rules and random.random() < 0.3:
-            # take epsilon
-            break
-        rule = random.choice(rules)
-        if len(rule) == 0:
-            break
-        # rule should be [terminal, next_sym]
-        a = rule[0]
-        out_chars.append(a)
-        if len(rule) > 1:
-            sym = rule[1]
-        else:
-            # no next symbol -> terminate
-            break
-    return "".join(out_chars)
 
 
 def fuzz_batch(grammar: Dict[str, List[List[str]]], start_sym: str, count: int,
-               max_steps: int = 4096) -> List[str]:
-    return [sample_from_right_linear(grammar, start_sym, max_steps=max_steps) for _ in range(count)]
+               max_depth: int = 32) -> List[str]:
+    """Fuzz `count` samples from a right-linear grammar using LimitFuzzer.
+
+    This uses the same LimitFuzzer-based generation as the rpni_fuzz learner,
+    so warmup and the fuzzing RPNI variant are consistent.
+    """
+    try:
+        gf = fuzzer.LimitFuzzer(grammar)
+    except Exception:
+        return []
+    out: List[str] = []
+    for _ in range(count):
+        try:
+            s = gf.iter_fuzz(key=start_sym, max_depth=max_depth)
+        except Exception:
+            continue
+        if isinstance(s, str):
+            out.append(s)
+    return out
 
 
 # --------------
@@ -263,13 +245,12 @@ def run_rounds(init_pos: List[str], init_neg: List[str],
         # Build DFA view for accuracy computation
         trans, accept_map = build_dfa_from_right_linear(g)
 
-        # 2) Fuzz batch from grammar
-        samples = fuzz_batch(g, start_sym, batch_size, max_steps=max_steps)
+        # 2) Fuzz batch from grammar using LimitFuzzer (same as rpni_fuzz learner)
+        samples = fuzz_batch(g, start_sym, batch_size, max_depth=max_steps)
 
         # 3) Classify with oracle (parallel)
-        added_pos = 0
         added_neg = 0
-        to_write: List[Tuple[str, bool]] = []
+        to_write_neg: List[str] = []
         # Accuracy counters
         total = len(samples)
         correct = 0
@@ -289,45 +270,29 @@ def run_rounds(init_pos: List[str], init_neg: List[str],
                     pred_ok = False
                 if pred_ok == ok:
                     correct += 1
-                # Dedup before recording
-                if ok:
-                    if s not in pos_set:
-                        pos_set.add(s)
-                        to_write.append((s, True))
-                        added_pos += 1
-                else:
-                    if s not in neg_set:
-                        neg_set.add(s)
-                        to_write.append((s, False))
-                        added_neg += 1
+                # Only add new *negative* examples to the training sets
+                if not ok and s not in neg_set:
+                    neg_set.add(s)
+                    to_write_neg.append(s)
+                    added_neg += 1
 
-        # 4) Persist newly labeled to folders and caches
-        # Write files under positive/ and negative/
-        for idx, (s, is_pos) in enumerate(to_write, start=1):
-            if is_pos:
-                fname = os.path.join(out_pos_dir, f"warm_pos_r{r}_{idx:05d}.txt")
-            else:
-                fname = os.path.join(out_neg_dir, f"warm_neg_r{r}_{idx:05d}.txt")
+        # 4) Persist newly labeled negatives to folders and caches
+        for idx, s in enumerate(to_write_neg, start=1):
+            fname = os.path.join(out_neg_dir, f"warm_neg_r{r}_{idx:05d}.txt")
             try:
                 with open(fname, "w", encoding="utf-8") as f:
                     f.write(s)
             except Exception:
                 pass
-        # Append to cache lists
-        if added_pos:
-            with open(cache_pos_path, "a", encoding="utf-8") as f:
-                for s, is_pos in to_write:
-                    if is_pos:
-                        f.write(s + "\n")
+        # Append negatives to cache list
         if added_neg:
             with open(cache_neg_path, "a", encoding="utf-8") as f:
-                for s, is_pos in to_write:
-                    if not is_pos:
-                        f.write(s + "\n")
+                for s in to_write_neg:
+                    f.write(s + "\n")
 
         dt = time.time() - t0
         acc = (correct / total) if total else 0.0
-        print(f"[ROUND {r}] learned states: {len(g)} | batch={batch_size} | +pos={added_pos} +neg={added_neg} | acc={acc:.3f} | time={dt:.2f}s")
+        print(f"[ROUND {r}] learned states: {len(g)} | batch={batch_size} | +neg={added_neg} | acc={acc:.3f} | time={dt:.2f}s")
 
     # Cleanup tmp
     try:
