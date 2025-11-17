@@ -32,6 +32,8 @@ def This_sym(t: str) -> str:
 
 Any_one = '<$.>'
 Any_plus = '<$.+>'
+Star_one = '<$*>'
+Star_plus = '<$*+>'
 Empty = '<$>'
 
 Any_not_str = '<$![%s]>'
@@ -62,11 +64,10 @@ def corrupt_start(old_start: str) -> str:
 def add_start(old_start: str) -> Tuple[Dict[str, List[List[str]]], str]:
     """
     <$corrupt_start> -> <start>
-                      | <start> <$.+>
     """
     g_: Dict[str, List[List[str]]] = {}
     c_start = corrupt_start(old_start)
-    g_[c_start] = [[old_start], [old_start, Any_plus]]
+    g_[c_start] = [[old_start]]
     return g_, c_start
 
 def augment_grammar_ex(g: Dict[str, List[List[str]]], start: str, symbols: List[str] = None) -> Tuple[Dict[str, List[List[str]]], str]:
@@ -90,6 +91,8 @@ def augment_grammar_ex(g: Dict[str, List[List[str]]], start: str, symbols: List[
     Match_any_sym = {Any_one: [[Any_term]]}
     # Kleene-plus over Any_one
     Match_any_sym_plus = {Any_plus: [[Any_one], [Any_plus, Any_one]]}
+    # Match '*' literal (single)
+    Match_star_sym = {Star_one: [['*']]}
 
     # Match any symbol except given terminal
     Match_any_sym_except: Dict[str, List[List[str]]] = {}
@@ -105,11 +108,12 @@ def augment_grammar_ex(g: Dict[str, List[List[str]]], start: str, symbols: List[
         Match_del_sym[Del_sym(kk)] = [[]]
 
     # For each terminal 'kk' in original grammar
-    # <$ [kk]> -> kk | <$.> kk | <$ > | <$![kk]>
+    # <$ [kk]> -> kk | (optionally <$*> kk for delimiters/digits) | <$![kk]> | <$>
     Match_a_sym: Dict[str, List[List[str]]] = {}
     for kk in symbols:
         Match_a_sym[This_sym(kk)] = [
             [kk],
+            [Star_one, kk],
             [Any_one, kk],
             [Any_not(kk)],
             [Empty],
@@ -122,6 +126,7 @@ def augment_grammar_ex(g: Dict[str, List[List[str]]], start: str, symbols: List[
         **translate_terminals(g),
         **Match_any_sym,
         **Match_any_sym_plus,
+        **Match_star_sym,
         **Match_a_sym,
         **Match_any_sym_except,
         **Match_del_sym,
@@ -172,8 +177,12 @@ class ErrorCorrectingEarleyParser(earleyparser.EarleyParser):
     def __init__(self, grammar: Dict[str, List[List[str]]], log: bool = False, **kwargs):
         self._grammar = grammar
         self.log = log
-        # Max penalty pruning (can be overridden by env LSTAR_MAX_PENALTY)
-        self.max_penalty = int(os.getenv("LSTAR_MAX_PENALTY", "8"))
+        # Max penalty pruning (disabled by default; enable via env LSTAR_MAX_PENALTY)
+        _mp = os.getenv("LSTAR_MAX_PENALTY")
+        try:
+            self.max_penalty = int(_mp) if _mp not in (None, "") else None
+        except Exception:
+            self.max_penalty = None
         # Initialize base parser first (it may assign its own epsilon)
         super().__init__(grammar, **kwargs)
         # Now override with our penalty-aware nullable map
@@ -212,10 +221,10 @@ class ErrorCorrectingEarleyParser(earleyparser.EarleyParser):
         return rex == input_term
 
     def scan(self, col, state, letter):
-        # Note: base Earley expects to check match against current column letter
-        if self.match_terminal(letter, col.letter):
+        # Note: base Earley expects to check match against the grammar terminal at the dot vs current input column letter
+        cur = state.expr[state.dot]
+        if self.match_terminal(cur, col.letter):
             my_expr = list(state.expr)
-            cur = my_expr[state.dot]
             if cur == Any_term:
                 my_expr[state.dot] = col.letter
             elif isinstance(cur, str) and cur.startswith('!') and len(cur) > 1:
@@ -494,13 +503,8 @@ def tree_to_str_fix_ex(tree) -> str:
                 i1 = key.find('[')
                 i2 = key.rfind(']')
                 expected = key[i1 + 1:i2]
-                # If deletion branch chosen, do not emit expected
-                has_delete = any(
-                    isinstance(ch, tuple) and isinstance(ch[0], str) and (ch[0] == Empty or ch[0].startswith('<$del['))
-                    for ch in children
-                )
-                if not has_delete:
-                    out.append(expected)
+                # Always emit expected symbol; treat Empty/substitution paths as insert/replace fixes
+                out.append(expected)
                 # Do not recurse into children; they encode corrections/junk
                 return
             # Skip Any_plus/Empty machinery nodes entirely

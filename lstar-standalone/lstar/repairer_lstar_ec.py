@@ -48,8 +48,13 @@ if os.path.isdir(PY_DIR):
         if whl not in sys.path:
             sys.path.append(whl)
 
-# RPNI import (passive DFA learning from samples)
-from lstar.rpni import learn_grammar_from_samples as rpni_learn_grammar
+# RPNI import (passive NFA-based learning from samples)
+try:
+    from lstar.rpni_nfa import learn_grammar_from_samples_nfa as rpni_learn_grammar
+except Exception:
+    # Fallback to DFA-based RPNI if NFA variant unavailable
+    from lstar.rpni import learn_grammar_from_samples as rpni_learn_grammar
+from lstar.rpni_nfa import learn_grammar_from_samples_nfa as rpni_nfa_learn_grammar
 from lstar.observation_table import ObservationTable
 import earleyparser
 import cfgrandomsample
@@ -92,6 +97,7 @@ def read_lines(path: str) -> List[str]:
                 line = line[:-1]
             vals.append(line)
     return vals
+
 
 
 def derive_alphabet_from_examples(positives: Set[str], negatives: Set[str]) -> List[str]:
@@ -178,6 +184,135 @@ def debug_count_symbol_types(g: Grammar):
     print(f"[DEBUG] Grammar symbol types: {dict(cnt)}")
 
 
+def generate_mutations(positives: Set[str], n: int, alphabet: List[str]) -> List[str]:
+    """
+    Generate n mutations from THE SHORTEST positive string only, mimicking
+    earleyrepairer.cpp's single-edit covering grammar operations:
+      - delete one character
+      - substitute one character with another from alphabet (different char)
+      - insert one character from alphabet at some position
+    IMPORTANT: Do NOT introduce new characters beyond 'alphabet'.
+    Deterministic enumeration in the order: deletions -> substitutions -> insertions,
+    stop when n unique candidates collected.
+    """
+    if not positives or n <= 0 or not alphabet:
+        return []
+    # Shortest positive (tie-break lexicographic)
+    pos_list = sorted([p for p in positives if isinstance(p, str)], key=lambda s: (len(s), s))
+    if not pos_list:
+        return []
+    s = pos_list[0]
+    alpha: List[str] = list(alphabet)
+    alpha_set: Set[str] = set(alpha)
+
+    out_list: List[str] = []
+    seen: Set[str] = set()
+
+    def add_cand(cand: str) -> bool:
+        if cand and cand not in positives and cand != s and all((c in alpha_set) for c in cand):
+            if cand not in seen:
+                seen.add(cand)
+                out_list.append(cand)
+                return True
+        return False
+
+    # 1) Deletions (strictly shorter)
+    for i in range(len(s)):
+        if len(out_list) >= n:
+            return out_list
+        cand = s[:i] + s[i+1:]
+        add_cand(cand)
+
+    # 2) Substitutions (same length)
+    if len(out_list) < n and len(s) > 0:
+        for i in range(len(s)):
+            if len(out_list) >= n:
+                return out_list
+            for ch in alpha:
+                if ch == s[i]:
+                    continue
+                if add_cand(s[:i] + ch + s[i+1:]):
+                    if len(out_list) >= n:
+                        return out_list
+
+    # 3) Insertions (longer)
+    if len(out_list) < n:
+        for i in range(len(s) + 1):
+            if len(out_list) >= n:
+                return out_list
+            for ch in alpha:
+                if add_cand(s[:i] + ch + s[i:]):
+                    if len(out_list) >= n:
+                        return out_list
+
+    return out_list[:n]
+
+
+def generate_mutations_random(positives: Set[str], n: int, alphabet: List[str], seed: Optional[int] = None) -> List[str]:
+    """
+    Randomly generate up to n mutations from THE SHORTEST positive string only.
+    Edits are sampled at random with a bias toward deletions/substitutions:
+      - op ∈ {del, sub, ins} with probabilities ~ (0.5, 0.35, 0.15)
+      - position chosen uniformly at random
+      - substitution/insert character ~ Uniform(alphabet), for sub ensure != original char when possible
+    Ensures:
+      - no new characters beyond 'alphabet'
+      - excludes the original string
+      - uniqueness (set)
+    """
+    if not positives or n <= 0 or not alphabet:
+        return []
+    # shortest positive (length, then lexicographic)
+    base_list = sorted([p for p in positives if isinstance(p, str)], key=lambda s: (len(s), s))
+    if not base_list:
+        return []
+    s = base_list[0]
+    import random as _rnd
+    if seed is not None:
+        try:
+            _rnd.seed(int(seed))
+        except Exception:
+            pass
+    alpha = list(alphabet)
+    alpha_set = set(alpha)
+
+    out: Set[str] = set()
+    tries = 0
+    max_tries = max(2000, 40 * n)
+    while len(out) < n and tries < max_tries:
+        tries += 1
+        # choose op with bias (del > sub > ins)
+        r = _rnd.random()
+        if len(s) == 0:
+            op = "ins"
+        elif len(s) == 1:
+            op = "sub" if r < 0.7 else "ins"
+        else:
+            op = "del" if r < 0.5 else ("sub" if r < 0.85 else "ins")
+
+        if op == "del":
+            i = _rnd.randrange(len(s))
+            cand = s[:i] + s[i+1:]
+        elif op == "sub":
+            i = _rnd.randrange(len(s))
+            if len(alpha) > 1:
+                choices = [ch for ch in alpha if ch != s[i]]
+                if not choices:
+                    continue
+                ch = _rnd.choice(choices)
+            else:
+                ch = alpha[0]
+            cand = s[:i] + ch + s[i+1:]
+        else:  # ins
+            i = _rnd.randrange(len(s) + 1)
+            ch = _rnd.choice(alpha)
+            cand = s[:i] + ch + s[i:]
+
+        if cand != s and cand not in positives and all((c in alpha_set) for c in cand):
+            out.add(cand)
+    return list(out)[:n]
+
+
 def learn_grammar(positives: Set[str], negatives: Set[str], unknown_policy: str = "negative") -> Tuple[Grammar, str, List[str]]:
     """
     Learn a right-linear CFG from samples using RPNI (no membership oracle).
@@ -190,6 +325,20 @@ def learn_grammar(positives: Set[str], negatives: Set[str], unknown_policy: str 
         print(f"[PROFILE] rpni: {t1 - t0:.2f}s, P={len(positives)}, N={len(negatives)}, |A|={len(alphabet)}")
     except Exception:
         print(f"[PROFILE] rpni: {t1 - t0:.2f}s")
+    return g, start_sym, alphabet
+
+def learn_grammar_nfa(positives: Set[str], negatives: Set[str], unknown_policy: str = "negative") -> Tuple[Grammar, str, List[str]]:
+    """
+    Learn a right-linear CFG from samples using modified RPNI that keeps an NFA.
+    unknown_policy is ignored (kept for CLI compatibility).
+    """
+    t0 = time.time()
+    g, start_sym, alphabet = rpni_nfa_learn_grammar(positives, negatives)
+    t1 = time.time()
+    try:
+        print(f"[PROFILE] rpni_nfa: {t1 - t0:.2f}s, P={len(positives)}, N={len(negatives)}, |A|={len(alphabet)}")
+    except Exception:
+        print(f"[PROFILE] rpni_nfa: {t1 - t0:.2f}s")
     return g, start_sym, alphabet
 
 
@@ -377,101 +526,74 @@ def earley_correct(g: Grammar, start_sym: str, broken: str, symbols: List[str] =
 
     covering_grammar, covering_start = ec.augment_grammar_ex(g, start_sym, symbols=symbols)
     parser = ec.ErrorCorrectingEarleyParser(covering_grammar)
-    # Configure parser pruning threshold: CLI-provided > env > default 32
-    if max_penalty is None:
-        try:
-            max_penalty = int(os.getenv("LSTAR_MAX_PENALTY", "32"))
-        except Exception:
-            max_penalty = 32
+    # Max penalty pruning disabled; do not set parser.max_penalty here
 
     # Parse timeout (seconds), can be overridden via env LSTAR_PARSE_TIMEOUT
     try:
-        parse_timeout = float(os.getenv("LSTAR_PARSE_TIMEOUT", "5.0"))
+        parse_timeout = float(os.getenv("LSTAR_PARSE_TIMEOUT", "40.0"))
     except Exception:
-        parse_timeout = 5.0
+        parse_timeout = 40.0
 
-    # Attempts with decreasing penalty budget if we time out
-    attempts: List[int] = []
-    try:
-        mp0 = int(max_penalty)
-        attempts = [mp0, max(1, mp0 // 2), 1]
-        # deduplicate while preserving order
-        _seen_mp = set()
-        attempts = [x for x in attempts if not (x in _seen_mp or _seen_mp.add(x))]
-    except Exception:
-        try:
-            attempts = [int(max_penalty)]
-        except Exception:
-            attempts = [8]
-
+    # Single parse attempt without max_penalty budget retries
     se = None
     last_err = None
-    for mp in attempts:
+    # Timeout guard around parse (uses Unix signals; works on macOS/Linux)
+    try:
+        import signal
+
+        def _timeout_handler(signum, frame):
+            raise TimeoutError("parse timeout")
+
+        old_handler = None
         try:
-            parser.max_penalty = int(mp)
+            old_handler = signal.getsignal(signal.SIGALRM)
+            signal.signal(signal.SIGALRM, _timeout_handler)
         except Exception:
-            pass
-
-        # Timeout guard around parse (uses Unix signals; works on macOS/Linux)
-        try:
-            import signal
-
-            def _timeout_handler(signum, frame):
-                raise TimeoutError("parse timeout")
-
             old_handler = None
-            try:
-                old_handler = signal.getsignal(signal.SIGALRM)
-                signal.signal(signal.SIGALRM, _timeout_handler)
-            except Exception:
-                old_handler = None
 
+        try:
+            if hasattr(signal, "setitimer"):
+                signal.setitimer(signal.ITIMER_REAL, max(0.0, parse_timeout))
+            else:
+                # Fallback with integer seconds if setitimer unavailable
+                secs = int(parse_timeout) if parse_timeout >= 1 else 1
+                signal.alarm(secs)
+
+            se = ec.SimpleExtractorEx(parser, broken, covering_start, penalty=penalty, log=log)
+        finally:
             try:
                 if hasattr(signal, "setitimer"):
-                    signal.setitimer(signal.ITIMER_REAL, max(0.0, parse_timeout))
+                    signal.setitimer(signal.ITIMER_REAL, 0)
                 else:
-                    # Fallback with integer seconds if setitimer unavailable
-                    secs = int(parse_timeout) if parse_timeout >= 1 else 1
-                    signal.alarm(secs)
+                    signal.alarm(0)
+            except Exception:
+                pass
+            try:
+                if old_handler is not None:
+                    signal.signal(signal.SIGALRM, old_handler)
+            except Exception:
+                pass
 
-                se = ec.SimpleExtractorEx(parser, broken, covering_start, penalty=penalty, log=log)
-                break  # success
-            finally:
-                try:
-                    if hasattr(signal, "setitimer"):
-                        signal.setitimer(signal.ITIMER_REAL, 0)
-                    else:
-                        signal.alarm(0)
-                except Exception:
-                    pass
-                try:
-                    if old_handler is not None:
-                        signal.signal(signal.SIGALRM, old_handler)
-                except Exception:
-                    pass
-
-        except TimeoutError as te:
-            last_err = te
+    except TimeoutError as te:
+        last_err = te
+        if log:
+            try:
+                print(f"[WARN] parse_prefix timed out after {parse_timeout:.2f}s")
+            except Exception:
+                print(f"[WARN] parse_prefix timed out")
+    except Exception as e:
+        last_err = e
+        # If requested penalty is invalid (no parse with that penalty), fall back to minimum-penalty
+        if penalty is not None and "Invalid penalty" in str(e):
             if log:
-                try:
-                    print(f"[WARN] parse_prefix timed out after {parse_timeout:.2f}s at max_penalty={mp}; retrying with lower budget...")
-                except Exception:
-                    print(f"[WARN] parse_prefix timed out; retrying with lower budget...")
-            continue
-        except Exception as e:
-            last_err = e
-            # If requested penalty is invalid (no parse with that penalty), fall back to minimum-penalty
-            if penalty is not None and "Invalid penalty" in str(e):
-                if log:
-                    print(f"[WARN] No solution with penalty={penalty}. Falling back to minimum-penalty solution.")
-                try:
-                    se = ec.SimpleExtractorEx(parser, broken, covering_start, penalty=None, log=log)
-                    break
-                except Exception as e2:
-                    last_err = e2
-            else:
-                # propagate other errors
-                raise
+                print(f"[WARN] No solution with penalty={penalty}. Falling back to minimum-penalty solution.")
+            try:
+                se = ec.SimpleExtractorEx(parser, broken, covering_start, penalty=None, log=log)
+            except Exception as e2:
+                last_err = e2
+        else:
+            # propagate other errors
+            raise
 
     if se is None:
         # Final fallback: raise last error if parse never succeeded
@@ -488,8 +610,9 @@ def earley_correct(g: Grammar, start_sym: str, broken: str, symbols: List[str] =
 def earley_correct_min_penalty(g: Grammar, start_sym: str, broken: str, symbols: List[str] = None, log: bool = False, min_penalty: int = 1, max_penalty: Optional[int] = None) -> Optional[str]:
     """
     Like earley_correct but forces the minimum correction penalty to be >= min_penalty.
-    Tries exact penalties p in [min_penalty..max_penalty] using SimpleExtractorEx (single-parse per p).
-    Returns first fixed string found, or None if no parse exists in the range.
+    If env LSTAR_RANDOM_MIN_PENALTY is set (e.g., via --random-penalty), choose ONE random penalty
+    in [min_penalty..max_penalty] and try only that; otherwise iterate the range.
+    Returns first fixed string found, or None if no parse exists.
     """
     if symbols is None:
         symbols = terminals_of_grammar(g)
@@ -502,20 +625,11 @@ def earley_correct_min_penalty(g: Grammar, start_sym: str, broken: str, symbols:
             max_penalty = int(os.getenv("LSTAR_MAX_PENALTY", "32"))
         except Exception:
             max_penalty = 32
-    try:
-        parse_timeout = float(os.getenv("LSTAR_PARSE_TIMEOUT", "5.0"))
-    except Exception:
-        parse_timeout = 5.0
 
-    # Iterate target penalties p = min_penalty..max_penalty
-    for p in range(max(1, int(min_penalty)), max(1, int(max_penalty)) + 1):
+    parse_timeout = 600.0
+
+    def try_with_penalty(p: int) -> Optional[str]:
         try:
-            # Apply prune budget
-            try:
-                parser.max_penalty = int(max_penalty)
-            except Exception:
-                pass
-
             # Timeout guard
             import signal
             def _timeout_handler(signum, frame):
@@ -546,21 +660,38 @@ def earley_correct_min_penalty(g: Grammar, start_sym: str, broken: str, symbols:
                         signal.signal(signal.SIGALRM, old_handler)
                 except Exception:
                     pass
-
-            # Success: extract and project
             tree = se.extract_a_tree()
-            if hasattr(ec, "tree_to_str_fix_ex"):
-                return ec.tree_to_str_fix_ex(tree)
-            else:
-                return ec.tree_to_str(tree)
+            return ec.tree_to_str_fix_ex(tree) if hasattr(ec, "tree_to_str_fix_ex") else ec.tree_to_str(tree)
         except Exception as e:
-            # Just try next penalty on invalid/no-parse/timeout
             if log:
                 try:
                     print(f"[DEBUG] min-penalty probe p={p} failed: {e}")
                 except Exception:
                     pass
-            continue
+            return None
+
+    # Random single selection mode
+    random_one = os.getenv("LSTAR_RANDOM_MIN_PENALTY", "").lower() in ("1", "true", "yes")
+    lo = max(1, int(min_penalty))
+    hi = max(1, int(max_penalty))
+    if random_one:
+        try:
+            p = random.randint(lo, hi)
+        except Exception:
+            import random as _rnd
+            p = _rnd.randint(lo, hi)
+        if log:
+            try:
+                print(f"[DEBUG] min-penalty(random-one): p={p} in [{lo}..{hi}]")
+            except Exception:
+                pass
+        return try_with_penalty(p)
+
+    # Default: iterate p = min_penalty..max_penalty
+    for p in range(lo, hi + 1):
+        res = try_with_penalty(p)
+        if res is not None:
+            return res
     return None
 
 
@@ -580,10 +711,6 @@ def enumerate_repairs(g: Grammar, start_sym: str, broken: str, symbols: List[str
             max_penalty = int(os.getenv("LSTAR_MAX_PENALTY", "32"))
         except Exception:
             max_penalty = 32
-    try:
-        parser.max_penalty = int(max_penalty)
-    except Exception:
-        pass
     # Single parse_prefix; enumerate all trees across penalties and forest choices
     mx = ec.MultiExtractorEx(parser, broken, covering_start, penalties=penalties, log=log)
     out: List[str] = []
@@ -706,7 +833,7 @@ def main():
     ap.add_argument("--max-penalty", type=int, default=8, help="Max correction penalty allowed during parsing (higher tolerates longer junk). Overrides env LSTAR_MAX_PENALTY.")
     ap.add_argument("--update-cache-on-relearn", action="store_true", help="If set, overwrite the grammar cache on relearning attempts. Default keeps the original cache intact.")
     ap.add_argument("--results-json", help="Write per-case repair results to this JSON file")
-    ap.add_argument("--learner", default="lstar_oracle", choices=["lstar_oracle","rpni"], help="Learning algorithm: 'lstar_oracle' (default) uses L* with validator-backed oracle; 'rpni' uses passive RPNI")
+    ap.add_argument("--learner", default="lstar_oracle", choices=["lstar_oracle","rpni","rpni_nfa"], help="Learning algorithm: 'lstar_oracle' (default) uses L* with validator-backed oracle; 'rpni' uses passive RPNI; 'rpni_nfa' uses modified RPNI that keeps an NFA")
     ap.add_argument("--oracle-validator", help="Path or command for oracle validator; overrides default search under validators/regex or validators")
     # Equivalence/speed knobs (allow approximate acceptance to reduce oracle queries)
     ap.add_argument("--eq-max-length", type=int, default=10, help="Max length to sample in equivalence (default: 10)")
@@ -718,6 +845,11 @@ def main():
     ap.add_argument("--ec-enumerate", action="store_true", help="Enumerate ALL repair candidates up to max-penalty in a single EC run")
     ap.add_argument("--ec-limit", type=int, help="Optional cap on number of candidates enumerated per input to avoid explosion")
     ap.add_argument("--accumulate-negatives-round", action="store_true", help="Accumulate failing broken inputs across a full pass, then relearn once (batch rounds)")
+    ap.add_argument("--mutations", type=int, default=0, help="Number of mutated samples to generate from positives using only existing characters")
+    ap.add_argument("--mutations-random", action="store_true", help="Generate mutations randomly (instead of deterministic enumeration)")
+    ap.add_argument("--mutations-deterministic", action="store_true", help="Force deterministic mutation enumeration (overrides --mutations-random)")
+    ap.add_argument("--mutations-seed", type=int, help="Random seed for mutation generation (optional)")
+    ap.add_argument("--random-penalty", action="store_true", help="Randomly choose a penalty in [1..--max-penalty] for EC; falls back to min-penalty on invalid")
     args = ap.parse_args()
 
     # Prepare optional oracle validator command override
@@ -737,6 +869,24 @@ def main():
                 print(f"[WARN] --penalty {p} exceeds max of 8; capping to 8.")
             p = 8
         penalty_val = p
+    # Optional: random penalty selection if not explicitly provided
+    if getattr(args, "random_penalty", False) and penalty_val is None:
+        try:
+            max_p = int(getattr(args, "max_penalty", 8))
+        except Exception:
+            max_p = 8
+        try:
+            penalty_val = random.randint(1, max(1, max_p))
+            if args.log:
+                print(f"[DEBUG] Randomly selected penalty={penalty_val} in [1..{max_p}]")
+        except Exception:
+            pass
+    # Propagate preference for random penalty selection to min-penalty helper via env
+    try:
+        if getattr(args, "random_penalty", False):
+            os.environ["LSTAR_RANDOM_MIN_PENALTY"] = "1"
+    except Exception:
+        pass
 
     pos_lines = read_lines(args.positives) if args.positives and os.path.isfile(args.positives) else []
     neg_lines = read_lines(args.negatives) if args.negatives and os.path.isfile(args.negatives) else []
@@ -765,6 +915,36 @@ def main():
     teacher_negatives: Set[str] = set(neg_lines)
 
     print(f"[INFO] Loaded positives={len(positives)}, negatives={len(teacher_negatives)}, broken_inputs={len(broken_inputs)}")
+
+    # Optional: generate additional samples via mutation, using ONLY characters from positives
+    try:
+        mut_n = int(getattr(args, "mutations", 0) or 0)
+    except Exception:
+        mut_n = 0
+    if mut_n > 0 and positives:
+        # derive alphabet strictly from positives to avoid introducing new characters
+        alph_pos = derive_alphabet_from_examples(positives, set())
+        # choose random or deterministic mutation generator
+        use_deterministic = bool(getattr(args, "mutations_deterministic", False))
+        use_random = bool(getattr(args, "mutations_random", False)) or not use_deterministic
+        if use_random:
+            muts = generate_mutations_random(positives, mut_n, alph_pos, seed=getattr(args, "mutations_seed", None))
+        else:
+            muts = generate_mutations(positives, mut_n, alph_pos)
+        print(f"[INFO] Generated {len(muts)} mutation(s) from positives (requested {mut_n}). Classifying with oracle ...")
+        acc = 0
+        rej = 0
+        for s in muts:
+            ok = validate_with_match(args.category, s, validator_cmd)
+            if ok:
+                # Add accepted mutants into positives
+                positives.add(s)
+                acc += 1
+            else:
+                # Add rejected mutants into negatives
+                teacher_negatives.add(s)
+                rej += 1
+        print(f"[INFO] Mutation classification: accepted={acc}, rejected={rej}. Totals now P={len(positives)}, N={len(teacher_negatives)}")
     # Handle grammar cache: load if available (and not init), otherwise learn and optionally save
     g: Grammar
     start_sym: str
@@ -791,6 +971,8 @@ def main():
         t_learn0 = time.time()
         if args.learner == "rpni":
             g_raw, start_sym, alphabet = learn_grammar(positives, teacher_negatives, unknown_policy=args.unknown_policy)
+        elif args.learner == "rpni_nfa":
+            g_raw, start_sym, alphabet = learn_grammar_nfa(positives, teacher_negatives, unknown_policy=args.unknown_policy)
         else:
             g_raw, start_sym, alphabet = lstar_learn_with_oracle(
                 positives,
@@ -863,8 +1045,22 @@ def main():
             pass
 
         # Default path: either single best (earley_correct) or enumerate all candidates (MultiExtractorEx)
+        broken_parse = broken
         t2 = time.time()
-        fixed = earley_correct(g_norm, start_sym, broken, symbols=alphabet, log=args.log, penalty=penalty_val, max_penalty=int(getattr(args, "max_penalty", 8)))
+        # If random penalty requested (and not explicitly set), pick a random penalty per run
+        penalty_arg = penalty_val
+        if getattr(args, "random_penalty", False) and getattr(args, "penalty", None) is None:
+            try:
+                max_p = int(getattr(args, "max_penalty", 8))
+            except Exception:
+                max_p = 8
+            try:
+                penalty_arg = random.randint(1, max(1, max_p))
+                if args.log:
+                    print(f"[DEBUG] Randomly selected penalty={penalty_arg} in [1..{max_p}]")
+            except Exception:
+                penalty_arg = penalty_val
+        fixed = earley_correct(g_norm, start_sym, broken_parse, symbols=alphabet, log=args.log, penalty=penalty_arg, max_penalty=int(getattr(args, "max_penalty", 8)))
         t3 = time.time()
         print(f"[PROFILE] ec_earley: {t3 - t2:.2f}s")
 
@@ -900,6 +1096,8 @@ def main():
                 t_learn0 = time.time()
                 if args.learner == "rpni":
                     g_raw, start_sym, alphabet = learn_grammar(positives, teacher_negatives, unknown_policy=args.unknown_policy)
+                elif args.learner == "rpni_nfa":
+                    g_raw, start_sym, alphabet = learn_grammar_nfa(positives, teacher_negatives, unknown_policy=args.unknown_policy)
                 else:
                     g_raw, start_sym, alphabet = lstar_learn_with_oracle(
                         positives,
@@ -956,8 +1154,22 @@ def main():
                 except Exception as _e:
                     pass
 
+                broken_parse = broken
                 t2 = time.time()
-                fixed = earley_correct(g_norm, start_sym, broken, symbols=alphabet, log=args.log, penalty=penalty_val, max_penalty=int(getattr(args, "max_penalty", 8)))
+                # Random penalty per attempt if requested (and no explicit --penalty)
+                penalty_arg = penalty_val
+                if getattr(args, "random_penalty", False) and getattr(args, "penalty", None) is None:
+                    try:
+                        max_p = int(getattr(args, "max_penalty", 8))
+                    except Exception:
+                        max_p = 8
+                    try:
+                        penalty_arg = random.randint(1, max(1, max_p))
+                        if args.log:
+                            print(f"[DEBUG] [ATTEMPT {attempt}] Randomly selected penalty={penalty_arg} in [1..{max_p}]")
+                    except Exception:
+                        penalty_arg = penalty_val
+                fixed = earley_correct(g_norm, start_sym, broken_parse, symbols=alphabet, log=args.log, penalty=penalty_arg, max_penalty=int(getattr(args, "max_penalty", 8)))
                 t3 = time.time()
                 print(f"[PROFILE] ec_earley(relearn): {t3 - t2:.2f}s")
 

@@ -16,7 +16,7 @@ REPAIR_OUTPUT_DIR = "repair_results"  # Directory where repair outputs are store
 os.makedirs(REPAIR_OUTPUT_DIR, exist_ok=True)
 
 # Possible repair algorithms you want to test
-REPAIR_ALGORITHMS = ["lstar_ec"]
+REPAIR_ALGORITHMS = ["lstar_ec","erepair"]
 
 PROJECT_PATHS = {
     "dot": "project/erepair-subjects/dot/build/dot_parser",
@@ -51,11 +51,15 @@ VALID_FORMATS = ["date", "time", "url", "isbn", "ipv4", "ipv6"]
 
 MUTATION_TYPES = ["single"]
 
+# Train/Test split counts (default 50/50). Override via env BM_TRAIN_K, BM_TEST_K.
+TRAIN_K = int(os.environ.get("BM_TRAIN_K", "50"))
+TEST_K = int(os.environ.get("BM_TEST_K", "50"))
+
 # Parser timeout (in seconds)
 VALIDATION_TIMEOUT = 30
 
 # Repair timeout (in seconds)
-REPAIR_TIMEOUT = 900
+REPAIR_TIMEOUT = 240
 
 # Verbosity and run-control
 QUIET = False          # suppress per-entry stdout/stderr and noisy logs
@@ -114,7 +118,7 @@ def load_test_samples_from_db(mutation_db_path: str):
 
     conn = sqlite3.connect(mutation_db_path)
     cursor = conn.cursor()
-    cursor.execute("SELECT id, original_text, mutated_text FROM mutations")
+    cursor.execute("SELECT id, original_text, mutated_text FROM mutations ORDER BY id")
     samples = cursor.fetchall()
     conn.close()
 
@@ -251,6 +255,30 @@ def extract_oracle_info(stdout: str):
     return 0, 0, 0, 0
 
 
+def extract_lstar_attempts(stdout: str) -> int:
+    """
+    Extract number of LSTAR EC attempts from stdout logs.
+    Counts '[ATTEMPT N]' lines and returns N+1 (to include attempt 0).
+    Falls back to parsing 'attempt x/y' info lines.
+    """
+    max_attempt = -1
+    try:
+        for m in re.finditer(r"\[ATTEMPT\s+(\d+)\]", stdout):
+            n = int(m.group(1))
+            if n > max_attempt:
+                max_attempt = n
+        if max_attempt >= 0:
+            return max_attempt + 1
+        # Fallback: parse 'attempt x/y' lines
+        m2 = re.findall(r"attempt\s+(\d+)\s*/\s*(\d+)", stdout, flags=re.IGNORECASE)
+        if m2:
+            max_attempt = max(int(x) for x, _ in m2)
+            return max_attempt + 1  # include initial attempt 0
+    except Exception:
+        pass
+    return 0
+
+
 def repair_and_update_entry(cursor, conn, row):
     """
     Given a single row from the 'results' table, run the repair tool, measure results,
@@ -312,7 +340,7 @@ def repair_and_update_entry(cursor, conn, row):
         cmd = ["./earleyrepairer", oracle_executable, input_file, output_file]
     elif algorithm == "lstar_ec":
         # Build top-K positives (K=20) from the corresponding mutation DB (e.g., mutated_files/single_date.db)
-        K=25
+        K=TRAIN_K
         base_format = format_key.split('_')[-1]
         mutation_type = format_key.split('_')[0]  # e.g., "single"
         category = REGEX_DIR_TO_CATEGORY.get(base_format, base_format)
@@ -364,7 +392,7 @@ def repair_and_update_entry(cursor, conn, row):
                 pass
 
         # Use our Python repairer with validators/regex oracle (handled inside repairer)
-        attempts = 50
+        attempts = 500
         # Prefer validators/regex validator; allow override via LSTAR_ORACLE_VALIDATOR
         oracle_override = os.environ.get("LSTAR_ORACLE_VALIDATOR")
         oracle_wrapper = os.path.join("validators", "regex", f"validate_{base_format}")
@@ -379,7 +407,9 @@ def repair_and_update_entry(cursor, conn, row):
             "--broken-file", input_file,
             "--output-file", output_file,
             "--max-attempts", str(attempts),
-            "--max-penalty", "5"
+            "--mutations", "100",
+            "--random-penalty",
+            "--max-penalty", "8"
         ]
         if oracle_cmd:
             cmd += ["--oracle-validator", oracle_cmd]
@@ -423,8 +453,8 @@ def repair_and_update_entry(cursor, conn, row):
         if algorithm == "lstar_ec":
             # Allow override via LSTAR_RUN_MAX_PENALTY; default to 2 if not supplied
             env.setdefault("LSTAR_MAX_PENALTY", os.environ.get("LSTAR_RUN_MAX_PENALTY", "8"))
-            # Raise EC parse timeout per attempt unless overridden (default 10s instead of 5s)
-            env.setdefault("LSTAR_PARSE_TIMEOUT", os.environ.get("LSTAR_PARSE_TIMEOUT", "10.0"))
+            # Raise EC parse timeout per attempt unless overridden (set to 100s)
+            env.setdefault("LSTAR_PARSE_TIMEOUT", os.environ.get("LSTAR_PARSE_TIMEOUT", "100.0"))
             cache_p = os.path.join("cache", f"lstar_{base_format}.json")
             if not QUIET:
                 try:
@@ -445,7 +475,11 @@ def repair_and_update_entry(cursor, conn, row):
         repair_time = time.time() - start_time
 
         # Extract oracle info (optional)
-        iterations, correct_runs, incorrect_runs, incomplete_runs = extract_oracle_info(stdout)
+        it_o, correct_runs, incorrect_runs, incomplete_runs = extract_oracle_info(stdout)
+        if algorithm == "lstar_ec":
+            iterations = extract_lstar_attempts(stdout)
+        else:
+            iterations = it_o
 
         if not QUIET:
             print(f"--- STDOUT (ID={id_}) ---\n{stdout}\n")
@@ -477,6 +511,15 @@ def repair_and_update_entry(cursor, conn, row):
         if pos_file and os.path.exists(pos_file):
             os.remove(pos_file)
         if 'neg_file' in locals() and neg_file and os.path.exists(neg_file):
+            # Persist negatives for future refinement (append into per-format accumulator)
+            try:
+                os.makedirs("negative", exist_ok=True)
+                accum_path = os.path.join("negative", f"accum_{base_format}.txt")
+                with open(neg_file, "r", encoding="utf-8") as nf, open(accum_path, "a", encoding="utf-8") as af:
+                    for line in nf:
+                        af.write(line)
+            except Exception:
+                pass
             os.remove(neg_file)
 
     # Update the database record
@@ -514,7 +557,6 @@ def rerun_repairs_for_selected_formats(db_path: str, selected_formats=None, max_
                incomplete_runs, distance_original_broken, distance_broken_repaired,
                distance_original_repaired
         FROM results
-        WHERE fixed = 0
     """)
     entries = cursor.fetchall()
     if not QUIET:
@@ -615,7 +657,7 @@ def main():
                 try:
                     pos_file = f"temp_pos_cache_{format_key}_{random.randint(0,9999)}.txt"
                     neg_file = f"temp_neg_cache_{format_key}_{random.randint(0,9999)}.txt"
-                    pre_k = int(os.environ.get("LSTAR_PRECOMP_K", "20"))
+                    pre_k = int(os.environ.get("LSTAR_PRECOMP_K", str(TRAIN_K)))
                     connc = sqlite3.connect(mutation_db_path)
                     curc = connc.cursor()
                     curc.execute(f"SELECT original_text FROM mutations ORDER BY id LIMIT {pre_k}")
@@ -729,11 +771,16 @@ def main():
 
                 print(f"[INFO] Loading samples from {mutation_db_path}")
                 samples = load_test_samples_from_db(mutation_db_path)
-                
-                if samples:
-                    # Insert each sample into the 'results' table for *each* algorithm
+
+                # Use first TRAIN_K for learning grammar (L*), and next TEST_K as test set
+                # Restrict to at most TRAIN_K + TEST_K entries
+                limited = samples[:TRAIN_K + TEST_K] if samples else []
+                test_samples = limited[TRAIN_K:TRAIN_K + TEST_K]
+
+                if test_samples:
                     format_key = f"{mutation_type}_{fmt}"
-                    insert_test_samples_to_db(db_path, format_key, samples)
+                    print(f"[INFO] Inserting {len(test_samples)} test samples (TRAIN_K={TRAIN_K}, TEST_K={TEST_K}) for {format_key}")
+                    insert_test_samples_to_db(db_path, format_key, test_samples)
                 else:
                     print(f"[INFO] No samples found in '{mutation_db_path}'")
 
