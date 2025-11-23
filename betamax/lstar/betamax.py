@@ -19,7 +19,7 @@ Usage example:
 Notes:
 - Does NOT depend on simplefuzzer.
 - Requires earleyparser (vendored wheel in betamax/py) and sympy (installed).
-- Default learner is L* with validator-backed oracle constructing the observation table (seeded with positive examples first); use --learner rpni to switch to passive RPNI.
+- Default learner is passive RPNI (validator-backed). Use --learner lstar_oracle to switch to the L* oracle-backed learner.
 """
 
 import os
@@ -835,7 +835,7 @@ def main():
     ap.add_argument("--max-penalty", type=int, default=8, help="Max correction penalty allowed during parsing (higher tolerates longer junk). Overrides env LSTAR_MAX_PENALTY.")
     ap.add_argument("--update-cache-on-relearn", action="store_true", help="If set, overwrite the grammar cache on relearning attempts. Default keeps the original cache intact.")
     ap.add_argument("--results-json", help="Write per-case repair results to this JSON file")
-    ap.add_argument("--learner", default="lstar_oracle", choices=["lstar_oracle","rpni","rpni_nfa","rpni_fuzz","rpni_xover"], help="Learning algorithm: 'lstar_oracle' (default) uses L* with validator-backed oracle; 'rpni' uses passive RPNI; 'rpni_nfa' uses modified RPNI that keeps an NFA; 'rpni_fuzz' uses RPNI with fuzzing-based DFA consistency checks; 'rpni_xover' uses RPNI with cross-over consistency checks based on positives")
+    ap.add_argument("--learner", default="rpni", choices=["lstar_oracle","rpni","rpni_nfa","rpni_fuzz","rpni_xover"], help="Learning algorithm: 'rpni' (default) uses passive RPNI; 'lstar_oracle' uses L* with validator-backed oracle; 'rpni_nfa' uses modified RPNI that keeps an NFA; 'rpni_fuzz' uses RPNI with fuzzing-based DFA consistency checks; 'rpni_xover' uses RPNI with cross-over consistency checks based on positives")
     ap.add_argument("--oracle-validator", help="Path or command for oracle validator; overrides default search under validators/regex or validators")
     # Equivalence/speed knobs (allow approximate acceptance to reduce oracle queries)
     ap.add_argument("--eq-max-length", type=int, default=10, help="Max length to sample in equivalence (default: 10)")
@@ -847,7 +847,7 @@ def main():
     ap.add_argument("--ec-enumerate", action="store_true", help="Enumerate ALL repair candidates up to max-penalty in a single EC run")
     ap.add_argument("--ec-limit", type=int, help="Optional cap on number of candidates enumerated per input to avoid explosion")
     ap.add_argument("--accumulate-negatives-round", action="store_true", help="Accumulate failing broken inputs across a full pass, then relearn once (batch rounds)")
-    ap.add_argument("--mutations", type=int, default=0, help="Number of mutated samples to generate from positives using only existing characters")
+    ap.add_argument("--mutations", type=int, default=20, help="Number of mutated samples to generate from positives using only existing characters")
     ap.add_argument("--mutations-random", action="store_true", help="Generate mutations randomly (instead of deterministic enumeration)")
     ap.add_argument("--mutations-deterministic", action="store_true", help="Force deterministic mutation enumeration (overrides --mutations-random)")
     ap.add_argument("--mutations-seed", type=int, help="Random seed for mutation generation (optional)")

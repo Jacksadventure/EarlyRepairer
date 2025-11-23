@@ -179,15 +179,15 @@ You can also call the engine directly for ad‑hoc experiments.
 python betamax/app/betamax.py \
   --positives positive/positives.txt \
   --category Date \
-  --broken "2025-13-40" \
+  --broken "2025-13-1a" \
   --output-file repaired.txt
 ```
 
 This will:
 
-- Learn a grammar from `positive/positives.txt` using the selected learner (default: `lstar_oracle`).
+- Learn a grammar from `positive/positives.txt` using the selected learner (default: `rpni`).
 - Use the Date validator (`validators/validate_date` or `validators/regex/validate_date`) as the oracle.
-- Attempt to repair the single broken input `2025-13-40`.
+- Attempt to repair the single broken input `2025-13-1a`.
 - Write the repaired string into `repaired.txt` (and print logs to stdout).
 
 You can alternatively pass a file:
@@ -218,7 +218,7 @@ python betamax/app/betamax.py \
 python betamax/app/betamax.py \
   --grammar-cache cache/date_grammar.json \
   --category Date \
-  --broken "2025-13-40" \
+  --broken "2025-13-1a" \
   --output-file repaired.txt
 ```
 
@@ -227,8 +227,8 @@ python betamax/app/betamax.py \
 - Choose learner:
 
   ```bash
-  --learner lstar_oracle   # default (L* + oracle)
-  --learner rpni           # passive RPNI
+  --learner rpni           # default (passive RPNI)
+  --learner lstar_oracle   # L* + oracle
   --learner rpni_nfa       # NFA-based RPNI
   --learner rpni_fuzz      # RPNI + fuzz consistency
   --learner rpni_xover     # RPNI + cross-over consistency
