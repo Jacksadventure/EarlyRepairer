@@ -14,10 +14,10 @@ Flow per round:
  5) Add the newly labeled samples to the training sets and repeat.
 
 Notes:
-- RPNI implementation is at: lstar-standalone/lstar/rpni.py
+- RPNI implementation is at: betamax/lstar/rpni.py
 - Oracle can be the regex validators (validators/regex/validate_*) or
   the C++ validators (validators/validate_*), or Python match.py.
-- Grammar format saved is compatible with lstar-standalone learners
+- Grammar format saved is compatible with betamax learners
   (keys: grammar, start_sym, alphabet).
 
 Example usage (Date):
@@ -51,18 +51,31 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Tuple, Iterable, Optional, Set
 from importlib.machinery import SourceFileLoader
-import simplefuzzer as fuzzer
+import glob
 
 REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CACHE_DIR = os.path.join(REPO_ROOT, "cache")
+
+# Ensure betamax vendored wheels (simplefuzzer, earleyparser, etc.) are importable
+LSTAR_ROOT = os.path.join(REPO_ROOT, "betamax")
+PY_DIR = os.path.join(LSTAR_ROOT, "py")
+if os.path.isdir(PY_DIR):
+    if PY_DIR not in sys.path:
+        sys.path.insert(0, PY_DIR)
+    for whl in glob.glob(os.path.join(PY_DIR, "*.whl")):
+        if whl not in sys.path:
+            sys.path.append(whl)
+
+import simplefuzzer as fuzzer
+# (moved up near imports)
 
 # --------------
 # Utilities
 # --------------
 
 def load_rpni_module():
-    """Dynamically load lstar-standalone/lstar/rpni.py as a module."""
-    rpni_path = os.path.join(REPO_ROOT, "lstar-standalone", "lstar", "rpni.py")
+    """Dynamically load betamax/lstar/rpni.py as a module."""
+    rpni_path = os.path.join(REPO_ROOT, "betamax", "lstar", "rpni.py")
     if not os.path.exists(rpni_path):
         raise FileNotFoundError(f"RPNI not found at {rpni_path}")
     mod = SourceFileLoader("_rpni_dyn", rpni_path).load_module()  # type: ignore[attr-defined]
@@ -109,6 +122,72 @@ def fuzz_batch(grammar: Dict[str, List[List[str]]], start_sym: str, count: int,
         if isinstance(s, str):
             out.append(s)
     return out
+
+
+def generate_mutations_from_positives(positives: Set[str], n: int) -> List[str]:
+    """Generate up to n single-edit mutations from the SHORTEST positive.
+
+    Strategy mirrors betamax/app/betamax.py's generate_mutations helper (via the lstar backend):
+      - choose the shortest positive (length, then lexicographic)
+      - deterministic enumeration in order: deletions -> substitutions -> insertions
+      - only use characters already present in the positives (no new alphabet)
+      - enforce uniqueness and avoid returning the original string
+    """
+    if not positives or n <= 0:
+        return []
+    # Shortest positive (length, then lexicographic)
+    base_list = sorted([p for p in positives if isinstance(p, str)], key=lambda s: (len(s), s))
+    if not base_list:
+        return []
+    s = base_list[0]
+    # Derive alphabet strictly from positives
+    alphabet_chars = sorted({c for p in positives for c in p})
+    if not alphabet_chars:
+        return []
+    alpha: List[str] = list(alphabet_chars)
+    alpha_set: Set[str] = set(alpha)
+
+    out_list: List[str] = []
+    seen: Set[str] = set()
+
+    def add_cand(cand: str) -> bool:
+        if cand and cand not in positives and cand != s and all((c in alpha_set) for c in cand):
+            if cand not in seen:
+                seen.add(cand)
+                out_list.append(cand)
+                return True
+        return False
+
+    # 1) Deletions (strictly shorter)
+    for i in range(len(s)):
+        if len(out_list) >= n:
+            return out_list
+        cand = s[:i] + s[i+1:]
+        add_cand(cand)
+
+    # 2) Substitutions (same length)
+    if len(out_list) < n and len(s) > 0:
+        for i in range(len(s)):
+            if len(out_list) >= n:
+                return out_list
+            for ch in alpha:
+                if ch == s[i]:
+                    continue
+                if add_cand(s[:i] + ch + s[i+1:]):
+                    if len(out_list) >= n:
+                        return out_list
+
+    # 3) Insertions (longer)
+    if len(out_list) < n:
+        for i in range(len(s) + 1):
+            if len(out_list) >= n:
+                return out_list
+            for ch in alpha:
+                if add_cand(s[:i] + ch + s[i:]):
+                    if len(out_list) >= n:
+                        return out_list
+
+    return out_list[:n]
 
 
 # --------------
@@ -211,7 +290,8 @@ class Oracle:
 def run_rounds(init_pos: List[str], init_neg: List[str],
                oracle: Oracle, out_pos_dir: str, out_neg_dir: str,
                rounds: int, batch_size: int, save_tag: str,
-               dedup_cache_dir: str, max_steps: int) -> None:
+               dedup_cache_dir: str, max_steps: int,
+               mutations_per_round: int = 0) -> None:
     rpni = load_rpni_module()
 
     # Dedup across rounds
@@ -245,8 +325,13 @@ def run_rounds(init_pos: List[str], init_neg: List[str],
         # Build DFA view for accuracy computation
         trans, accept_map = build_dfa_from_right_linear(g)
 
-        # 2) Fuzz batch from grammar using LimitFuzzer (same as rpni_fuzz learner)
-        samples = fuzz_batch(g, start_sym, batch_size, max_depth=max_steps)
+        # 2) Choose samples for this round
+        if mutations_per_round > 0 and pos_set:
+            # Mutation-only mode during rounds: generate candidates from SHORTEST positive.
+            samples = generate_mutations_from_positives(pos_set, mutations_per_round)
+        else:
+            # Default mode: grammar-based fuzzing each round.
+            samples = fuzz_batch(g, start_sym, batch_size, max_depth=max_steps)
 
         # 3) Classify with oracle (parallel)
         added_neg = 0
@@ -294,6 +379,33 @@ def run_rounds(init_pos: List[str], init_neg: List[str],
         acc = (correct / total) if total else 0.0
         print(f"[ROUND {r}] learned states: {len(g)} | batch={batch_size} | +neg={added_neg} | acc={acc:.3f} | time={dt:.2f}s")
 
+    # Final evaluation: in mutation mode, do ONE grammar-based fuzzing pass
+    # to estimate accuracy without updating training sets.
+    if mutations_per_round > 0:
+        try:
+            trans_eval, accept_map_eval = build_dfa_from_right_linear(g)
+            eval_samples = fuzz_batch(g, start_sym, batch_size, max_depth=max_steps)
+            total_eval = len(eval_samples)
+            correct_eval = 0
+            with ThreadPoolExecutor(max_workers=min(32, max(4, os.cpu_count() or 4))) as ex:
+                futs = {ex.submit(oracle.is_valid, s, tmp_dir): s for s in eval_samples}
+                for fut in as_completed(futs):
+                    s = futs[fut]
+                    try:
+                        ok = fut.result()
+                    except Exception:
+                        ok = False
+                    try:
+                        pred_ok = accepts_right_linear(trans_eval, accept_map_eval, start_sym, s)
+                    except Exception:
+                        pred_ok = False
+                    if pred_ok == ok:
+                        correct_eval += 1
+            acc_eval = (correct_eval / total_eval) if total_eval else 0.0
+            print(f"[FINAL] eval batch={total_eval} | acc={acc_eval:.3f} (grammar-based fuzzing only)")
+        except Exception as _e:
+            print(f"[WARN] Final evaluation failed: {_e}")
+
     # Cleanup tmp
     try:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -316,7 +428,8 @@ def main():
 
     ap.add_argument("--rounds", type=int, default=3, help="Number of learning rounds (default: 3)")
     ap.add_argument("--batch-size", type=int, default=1000, help="Number of fuzzed samples per round (default: 1000)")
-    ap.add_argument("--max-steps", type=int, default=2048, help="Max derivation steps per sample (default: 2048)")
+    ap.add_argument("--max-steps", type=int, default=2048, help="Max derivation steps per sample / fuzz depth (default: 2048)")
+    ap.add_argument("--mutations-per-round", type=int, default=0, help="Number of mutated samples (from shortest positive) per round (default: 0; 只追加负例)")
     ap.add_argument("--oracle-timeout", type=float, default=2.0, help="Oracle timeout per sample (seconds)")
     ap.add_argument("--out-positive-dir", default=os.path.join(REPO_ROOT, "positive"), help="Directory to write newly found positives")
     ap.add_argument("--out-negative-dir", default=os.path.join(REPO_ROOT, "negative"), help="Directory to write newly found negatives")
@@ -352,6 +465,7 @@ def main():
             save_tag=tag,
             dedup_cache_dir=DEFAULT_CACHE_DIR,
             max_steps=args.max_steps,
+            mutations_per_round=int(getattr(args, "mutations_per_round", 0) or 0),
         )
     except KeyboardInterrupt:
         print("[INFO] Interrupted by user.")

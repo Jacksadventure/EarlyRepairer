@@ -1,5 +1,0 @@
-[INFO] Loaded positives=100, negatives=100, broken_inputs=0
-[INFO] Learning initial grammar with provided samples ...
-[INFO] Learned start symbol: <0000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000>; Nonterminals: 230; Alphabet(chars): 12
-[INFO] Saved grammar cache to cache/lstar_time.json
-[INFO] No broken inputs provided. Exiting after grammar learning/caching.

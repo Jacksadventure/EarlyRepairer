@@ -1,0 +1,6 @@
+# Top-level requirements for the EarlyRepairer Python components
+
+# L* learner and its runtime dependencies are managed inside betamax.
+# They are provided as local wheels under betamax/py/.
+# Install them via the nested requirements file:
+-r betamax/requirements-local.txt

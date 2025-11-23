@@ -398,7 +398,7 @@ def repair_and_update_entry(cursor, conn, row):
         oracle_wrapper = os.path.join("validators", "regex", f"validate_{base_format}")
         oracle_cmd = oracle_override if oracle_override else (oracle_wrapper if os.path.exists(oracle_wrapper) else None)
         cmd = [
-            "python3", "lstar-standalone/lstar/repairer_lstar_ec.py",
+            "python3", "betamax/app/betamax.py",
             "--positives", pos_file,
             "--negatives", neg_file,
             # Use shared cache per format across all bm_* scripts
@@ -670,7 +670,7 @@ def main():
                     oracle_wrapper = os.path.join("validators", "regex", f"validate_{fmt}")
                     oracle_cmd = oracle_override if oracle_override else (oracle_wrapper if os.path.exists(oracle_wrapper) else None)
                     cmd = [
-                        "python3", "lstar-standalone/lstar/repairer_lstar_ec.py",
+                        "python3", "betamax/app/betamax.py",
                         "--positives", pos_file,
                         "--negatives", neg_file,
                         "--category", category,

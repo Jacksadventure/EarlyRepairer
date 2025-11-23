@@ -1,7 +1,0 @@
-[INFO] Loaded positives=18, negatives=20, broken_inputs=0
-[INFO] Learning initial grammar with provided samples ...
-[PROFILE] l_star: 2644.28s, queries=3868956, P=383, S=273, |A|=37
-[PROFILE] learn_grammar(total): 2644.31s; sanitize+expand: 0.00s
-[INFO] Learned start symbol: <000000000000000000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000>; Nonterminals: 289; Alphabet(chars): 37
-[INFO] Saved grammar cache to cache/lstar_url.json
-[INFO] No broken inputs provided. Exiting after grammar learning/caching.

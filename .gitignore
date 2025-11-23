@@ -1,1 +1,93 @@
-./earlyrepairer
+# OS-specific files
+.DS_Store
+*.DS_Store
+Thumbs.db
+
+# Editor / IDE settings
+.vscode/
+.idea/
+*.code-workspace
+*.sublime-project
+*.sublime-workspace
+
+# Python bytecode and cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Python packaging / build artifacts
+build/
+dist/
+downloads/
+eggs/
+.eggs/
+develop-eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+pip-wheel-metadata/
+
+# Python tooling caches
+.mypy_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.cache/
+.hypothesis/
+.pyre/
+.pytype/
+
+# C / C++ build artifacts
+*.o
+*.obj
+*.so
+*.dll
+*.dylib
+*.exe
+*.out
+*.a
+*.lib
+
+# Gradle / Java (project/ subproject)
+.gradle/
+build/
+project/.gradle/
+project/build/
+*.class
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.bak
+*~
+*.swp
+*.swo
+
+# SQLite databases and related generated data
+*.db
+
+# Generated / derived data and results
+mutated_files/
+repair_results/
+cache/
+project/repair_results/
+
+# Backup & misc
+*.orig
+*.rej
